@@ -39,6 +39,15 @@ impl RamDisk {
         Self { size, data }
     }
 
+    /// Copies the data from the given slice to the RAM disk.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the given slice is valid for the lifetime of the RAM disk.
+    pub unsafe fn copy_from_slice(&mut self, vaddr: *const u8) {
+        self.data = unsafe { core::slice::from_raw_parts(vaddr, self.size) }.to_vec();
+    }
+
     /// Returns the size of the RAM disk in bytes.
     pub const fn size(&self) -> usize {
         self.size

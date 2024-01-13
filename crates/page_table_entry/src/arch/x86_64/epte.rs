@@ -130,6 +130,14 @@ impl GenericPTE for EPTEntry {
     fn clear(&mut self) {
         self.0 = 0
     }
+
+    fn set_paddr(&mut self, _paddr: PhysAddr) {
+        todo!()
+    }
+
+    fn set_flags(&mut self, _flags: MappingFlags, _is_huge: bool) {
+        todo!()
+    }
 }
 
 impl fmt::Debug for EPTEntry {

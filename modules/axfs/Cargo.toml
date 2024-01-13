@@ -38,7 +38,7 @@ bitflags = "2.0"
 
 [dependencies.fatfs]
 git = "https://github.com/rafalh/rust-fatfs"
-rev = "a3a834e"
+# rev = "a3a834e"
 optional = true
 default-features = false
 features = [ # no std

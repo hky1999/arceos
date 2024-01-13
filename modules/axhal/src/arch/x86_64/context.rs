@@ -40,17 +40,17 @@ impl TrapFrame {
         self.cs & 0b11 == 3
     }
 
-    fn exception_pc(&self) -> usize {
-        self.rip as usize
-    }
+    // fn exception_pc(&self) -> usize {
+    //     self.rip as usize
+    // }
 
     fn set_exception_pc(&mut self, pc: usize) {
         self.rip = pc as u64;
     }
 
-    fn stack_pointer(&self) -> usize {
-        self.rsp as usize
-    }
+    // fn stack_pointer(&self) -> usize {
+    //     self.rsp as usize
+    // }
 
     fn set_stack_pointer(&mut self, sp: usize) {
         self.rsp = sp as u64;

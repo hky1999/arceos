@@ -29,12 +29,13 @@
 #![no_std]
 #![feature(asm_const)]
 #![feature(naked_functions)]
-#![feature(const_maybe_uninit_zeroed)]
 #![feature(doc_auto_cfg)]
 
 #[allow(unused_imports)]
 #[macro_use]
 extern crate log;
+
+pub const KERNEL_PROCESS_ID: u64 = 1;
 
 mod platform;
 

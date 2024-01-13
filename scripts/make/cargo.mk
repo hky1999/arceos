@@ -17,6 +17,10 @@ features-$(NET) += libax/net
 features-$(GRAPHIC) += libax/display
 features-$(HV) += libax/hv 
 
+ifeq ($(STRUCT),Combination)
+features-$(HV) += libax/monolithic 
+endif
+
 ifeq ($(GUEST), nimbos)
   features-$(HV) += guest_nimbos
 else ifeq($(GUEST), linux)

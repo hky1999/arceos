@@ -49,21 +49,6 @@ impl<M: PagingMetaData, PTE: GenericPTE, IF: PagingIf> PageTable64<M, PTE, IF> {
         })
     }
 
-    #[cfg(target_arch = "riscv64")]
-    pub fn try_new_gpt() -> PagingResult<Self> {
-        let root_paddr = Self::alloc_guest_page_table()?;
-        Ok(Self {
-            root_paddr,
-            intrm_tables: vec![
-                root_paddr,
-                root_paddr + 0x1000,
-                root_paddr + 0x2000,
-                root_paddr + 0x3000,
-            ],
-            _phantom: PhantomData,
-        })
-    }
-
     /// Returns the physical address of the root page table.
     pub const fn root_paddr(&self) -> PhysAddr {
         self.root_paddr
@@ -92,6 +77,22 @@ impl<M: PagingMetaData, PTE: GenericPTE, IF: PagingIf> PageTable64<M, PTE, IF> {
         *entry = GenericPTE::new_page(target.align_down(page_size), flags, page_size.is_huge());
         Ok(())
     }
+    /// Same as `PageTable64::map()`. This function will error if entry doesn't exist. Should be
+    /// used to edit PTE in page fault handler.
+    pub fn map_overwrite(
+        &mut self,
+        vaddr: VirtAddr,
+        target: PhysAddr,
+        page_size: PageSize,
+        flags: MappingFlags,
+    ) -> PagingResult {
+        let entry = self.get_entry_mut_or_create(vaddr, page_size)?;
+        if entry.is_unused() {
+            return Err(PagingError::AlreadyMapped);
+        }
+        *entry = GenericPTE::new_page(target.align_down(page_size), flags, page_size.is_huge());
+        Ok(())
+    }
 
     /// Unmaps the mapping starts with `vaddr`.
     ///
@@ -105,6 +106,14 @@ impl<M: PagingMetaData, PTE: GenericPTE, IF: PagingIf> PageTable64<M, PTE, IF> {
         let paddr = entry.paddr();
         entry.clear();
         Ok((paddr, size))
+    }
+    pub fn map_fault(&mut self, vaddr: VirtAddr, page_size: PageSize) -> PagingResult {
+        let entry = self.get_entry_mut_or_create(vaddr, page_size)?;
+        if !entry.is_unused() {
+            return Err(PagingError::AlreadyMapped);
+        }
+        *entry = GenericPTE::new_fault_page(page_size.is_huge());
+        Ok(())
     }
 
     /// Query the result of the mapping starts with `vaddr`.
@@ -121,6 +130,29 @@ impl<M: PagingMetaData, PTE: GenericPTE, IF: PagingIf> PageTable64<M, PTE, IF> {
         }
         let off = vaddr.align_offset(size);
         Ok((entry.paddr() + off, entry.flags(), size))
+    }
+
+    /// Updates the target or flags of the mapping starts with `vaddr`. If the
+    /// corresponding argument is `None`, it will not be updated.
+    ///
+    /// Returns the page size of the mapping.
+    ///
+    /// Returns [`Err(PagingError::NotMapped)`](PagingError::NotMapped) if the
+    /// mapping is not present.
+    pub fn update(
+        &mut self,
+        vaddr: VirtAddr,
+        paddr: Option<PhysAddr>,
+        flags: Option<MappingFlags>,
+    ) -> PagingResult<PageSize> {
+        let (entry, size) = self.get_entry_mut(vaddr)?;
+        if let Some(paddr) = paddr {
+            entry.set_paddr(paddr);
+        }
+        if let Some(flags) = flags {
+            entry.set_flags(flags, size.is_huge());
+        }
+        Ok(size)
     }
 
     /// Map a contiguous virtual memory region to a contiguous physical memory
@@ -191,6 +223,36 @@ impl<M: PagingMetaData, PTE: GenericPTE, IF: PagingIf> PageTable64<M, PTE, IF> {
         Ok(())
     }
 
+    /// TODO: huge page
+    pub fn map_fault_region(&mut self, mut vaddr: VirtAddr, mut size: usize) -> PagingResult {
+        if !vaddr.is_aligned(PageSize::Size4K)
+            || !memory_addr::is_aligned(size, PageSize::Size4K as usize)
+        {
+            return Err(PagingError::NotAligned);
+        }
+        trace!(
+            "map_fulat_region({:#x}): [{:#x}, {:#x})",
+            self.root_paddr(),
+            vaddr,
+            vaddr + size,
+        );
+
+        while size > 0 {
+            self.map_fault(vaddr, PageSize::Size4K).inspect_err(|e| {
+                error!(
+                    "failed to map fault page: {:#x?}({:?}), {:?}",
+                    vaddr,
+                    PageSize::Size4K,
+                    e
+                )
+            })?;
+            vaddr += PageSize::Size4K as usize;
+            size -= PageSize::Size4K as usize;
+        }
+
+        Ok(())
+    }
+
     /// Unmap a contiguous virtual memory region.
     ///
     /// The region must be mapped before using [`PageTable64::map_region`], or
@@ -215,7 +277,19 @@ impl<M: PagingMetaData, PTE: GenericPTE, IF: PagingIf> PageTable64<M, PTE, IF> {
         }
         Ok(())
     }
-
+    pub fn update_region(
+        &mut self,
+        mut vaddr: VirtAddr,
+        size: usize,
+        flags: MappingFlags,
+    ) -> PagingResult {
+        let end = vaddr + size;
+        while vaddr < end {
+            let page_size = self.update(vaddr, None, Some(flags))?;
+            vaddr += page_size as usize;
+        }
+        Ok(())
+    }
     /// Walk the page table recursively.
     ///
     /// When reaching the leaf page table, call `func` on the current page table
@@ -246,17 +320,6 @@ impl<M: PagingMetaData, PTE: GenericPTE, IF: PagingIf> PageTable64<M, PTE, IF> {
         if let Some(paddr) = IF::alloc_frame() {
             let ptr = IF::phys_to_virt(paddr).as_mut_ptr();
             unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE_4K) };
-            Ok(paddr)
-        } else {
-            Err(PagingError::NoMemory)
-        }
-    }
-
-    #[cfg(target_arch = "riscv64")]
-    fn alloc_guest_page_table() -> PagingResult<PhysAddr> {
-        if let Some(paddr) = IF::alloc_frames(4) {
-            let ptr = IF::phys_to_virt(paddr).as_mut_ptr();
-            unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE_4K * 4) };
             Ok(paddr)
         } else {
             Err(PagingError::NoMemory)
@@ -294,7 +357,7 @@ impl<M: PagingMetaData, PTE: GenericPTE, IF: PagingIf> PageTable64<M, PTE, IF> {
         }
     }
 
-    fn get_entry_mut(&self, vaddr: VirtAddr) -> PagingResult<(&mut PTE, PageSize)> {
+    pub fn get_entry_mut(&self, vaddr: VirtAddr) -> PagingResult<(&mut PTE, PageSize)> {
         let p3 = if M::LEVELS == 3 {
             self.table_of_mut(self.root_paddr())
         } else if M::LEVELS == 4 {

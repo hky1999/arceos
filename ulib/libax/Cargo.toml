@@ -49,6 +49,8 @@ net = ["alloc", "axruntime/net", "dep:axdriver", "dep:axnet"]
 # Pipe
 pipe = ["alloc"]
 
+# Monolithic
+monolithic = ["axruntime/monolithic"]
 # Hypervisor
 hv = ["dep:hypercraft", "axruntime/hv"]
 

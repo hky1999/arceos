@@ -66,6 +66,22 @@ pub trait Read {
             Ok(())
         }
     }
+
+    fn read_full(&mut self, mut buf: &mut [u8]) -> Result<usize> {
+        let buf_len = buf.len();
+
+        while !buf.is_empty() {
+            match self.read(buf) {
+                // read to EOF
+                Ok(0) => return Ok(buf_len - buf.len()),
+                // read n bytes
+                Ok(n) => buf = &mut buf[n..],
+                // error
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(buf_len)
+    }
 }
 
 /// A trait for objects which are byte-oriented sinks.
@@ -250,8 +266,8 @@ where
     }
 }
 
-/// Struct for poll result.
-#[derive(Debug, Default)]
+/// I/O poll results.
+#[derive(Debug, Default, Clone, Copy)]
 pub struct PollState {
     /// Object can be read now.
     pub readable: bool,

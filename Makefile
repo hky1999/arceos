@@ -14,6 +14,12 @@ NET ?= n
 GRAPHIC ?= n
 BUS ?= mmio
 HV ?= n
+# Unikernel | Monolithic | Hypervisor | Combination
+STRUCT ?= Unikernel
+
+ifeq ($(STRUCT),Combination)
+HV=y
+endif
 
 QEMU_LOG ?= n
 NET_DUMP ?= n

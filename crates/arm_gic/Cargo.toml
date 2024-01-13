@@ -11,4 +11,3 @@ documentation = "https://rcore-os.github.io/arceos/arm_gic/index.html"
 
 [dependencies]
 tock-registers = "0.8"
-spin = { version = "0.9.4", features = ["use_ticket_mutex"] }

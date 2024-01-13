@@ -47,7 +47,7 @@ pub struct VcpuInner {
 }
 
 #[derive(Debug)]
-enum TaskType {
+pub enum TaskType {
     /// ArceOS task.
     Task,
     /// User process.
@@ -85,7 +85,7 @@ pub struct TaskInner {
     ctx: UnsafeCell<TaskContext>,
 
     task_type: TaskType,
-    process_inner: Option<Arc<ProcessInner>>,
+    process_inner: Option<ProcessInner>,
     vcpu_inner: Option<Box<VcpuInner>>,
 }
 
@@ -341,27 +341,27 @@ impl TaskInner {
             clear_child_tid: AtomicU64::new(0),
         };
 
-        t.process_inner = Some(Arc::new(process_inner));
+        t.process_inner = Some(process_inner);
 
         Arc::new(AxTask::new(t))
     }
 
     pub fn set_child_tid(&self, tid: usize) {
-        self.process_inner
+        self.process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .set_child_tid
             .store(tid as u64, Ordering::Release)
     }
 
     pub fn set_clear_child_tid(&self, tid: usize) {
-        self.process_inner
+        self.process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .clear_child_tid
             .store(tid as u64, Ordering::Release)
     }
 
     pub fn get_clear_child_tid(&self) -> usize {
-        self.process_inner
+        self.process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .clear_child_tid
             .load(Ordering::Acquire) as usize
@@ -369,14 +369,14 @@ impl TaskInner {
 
     #[inline]
     pub fn get_page_table_token(&self) -> usize {
-        self.process_inner
+        self.process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .page_table_token
     }
 
     #[inline]
     pub fn get_process_id(&self) -> u64 {
-        self.process_inner
+        self.process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .process_id
             .load(Ordering::Acquire)
@@ -384,7 +384,7 @@ impl TaskInner {
 
     #[inline]
     pub fn set_process_id(&self, process_id: u64) {
-        self.process_inner
+        self.process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .process_id
             .store(process_id, Ordering::Release);
@@ -400,14 +400,14 @@ impl TaskInner {
     }
 
     pub fn set_leader(&self, is_lead: bool) {
-        self.process_inner
+        self.process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .is_leader
             .store(is_lead, Ordering::Release);
     }
 
     pub fn is_leader(&self) -> bool {
-        self.process_inner
+        self.process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .is_leader
             .load(Ordering::Acquire)
@@ -416,7 +416,7 @@ impl TaskInner {
     /// 设置Trap上下文
     pub fn set_trap_context(&self, trap_frame: TrapFrame) {
         let now_trap_frame = self
-            .process_inner
+            .process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .trap_frame
             .get();
@@ -433,7 +433,7 @@ impl TaskInner {
         }
         let trap_frame_size = core::mem::size_of::<TrapFrame>();
         let frame_address = self
-            .process_inner
+            .process_inner.as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .trap_frame
             .get();
@@ -449,8 +449,8 @@ impl TaskInner {
         entry: F,
         name: String,
         stack_size: usize,
-        vcpu_id: u64,
-        page_table_token: usize,
+        _vcpu_id: u64,
+        _page_table_token: usize,
     ) -> AxTaskRef
     where
         F: FnOnce() + Send + 'static,
@@ -500,6 +500,12 @@ impl TaskStack {
 
     pub const fn top(&self) -> VirtAddr {
         unsafe { core::mem::transmute(self.ptr.as_ptr().add(self.layout.size())) }
+    }
+
+    #[cfg(feature = "monolithic")]
+    /// 获取内核栈第一个压入的trap上下文，防止出现内核trap嵌套
+    pub fn get_first_trap_frame(&self) -> *mut TrapFrame {
+        (self.top().as_usize() - core::mem::size_of::<TrapFrame>()) as *mut TrapFrame
     }
 }
 
