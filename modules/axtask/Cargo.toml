@@ -15,6 +15,7 @@ multitask = [
     "dep:axconfig", "dep:percpu", "dep:spinlock", "dep:lazy_init",
     "dep:memory_addr", "dep:scheduler", "dep:timer_list"
 ]
+monolithic = []
 irq = []
 preempt = ["irq", "percpu?/preempt", "kernel_guard/preempt"]
 

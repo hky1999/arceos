@@ -295,7 +295,9 @@ dependencies = [
 name = "axfs_ramfs"
 version = "0.1.0"
 dependencies = [
+ "axerrno",
  "axfs_vfs",
+ "lazy_static",
  "log",
  "spin 0.9.8",
 ]
@@ -318,6 +320,7 @@ dependencies = [
  "arm_pl011",
  "axalloc",
  "axconfig",
+ "axfs_ramfs",
  "axlog",
  "bitflags 2.3.2",
  "cfg-if",
@@ -429,7 +432,9 @@ dependencies = [
  "axfs",
  "axhal",
  "axlog",
+ "axmem",
  "axnet",
+ "axprocess",
  "axtask",
  "bit_field",
  "bitflags 1.3.2",
@@ -477,6 +482,10 @@ dependencies = [
  "spinlock",
  "timer_list",
 ]
+
+[[package]]
+name = "axvm"
+version = "0.1.0"
 
 [[package]]
 name = "az"
