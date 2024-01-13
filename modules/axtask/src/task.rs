@@ -25,6 +25,52 @@ pub(crate) enum TaskState {
     Exited = 4,
 }
 
+pub struct ProcessInner {
+    #[cfg(feature = "monolithic")]
+    /// 是否是所属进程下的主线程
+    is_leader: AtomicBool,
+
+    #[cfg(feature = "monolithic")]
+    /// 初始化的trap上下文
+    pub trap_frame: UnsafeCell<TrapFrame>,
+
+    #[cfg(feature = "monolithic")]
+    pub page_table_token: usize,
+
+    #[cfg(feature = "monolithic")]
+    set_child_tid: AtomicU64,
+
+    #[cfg(feature = "monolithic")]
+    clear_child_tid: AtomicU64,
+
+    // 时间统计, 无论是否为宏内核架构都可能被使用到
+    #[allow(unused)]
+    time: UnsafeCell<TimeStat>,
+
+    #[cfg(feature = "monolithic")]
+    pub cpu_set: AtomicU64,
+
+    #[cfg(feature = "signal")]
+    /// 退出时是否向父进程发送SIG_CHILD
+    pub send_sigchld_when_exit: bool,
+
+    pub sched_status: UnsafeCell<SchedStatus>,
+}
+
+pub struct VcpuInner {
+    // Refer to `Vcpu` struct in crates/hypercraft/arch/${ARCH}/vcpu.rs
+}
+
+#[derive(Debug)]
+enum TaskType {
+    /// ArceOS task.
+    Task,
+    /// User process. Refaer to `https://github.com/Azure-stars/Starry`
+    Process(ProcessInner),
+    /// Virtual CPU. Refer to `Vcpu` struct in crates/hypercraft/arch/${ARCH}/vcpu.rs
+    Vcpu(VcpuInner),
+}
+
 /// The inner task structure.
 pub struct TaskInner {
     id: TaskId,
@@ -49,6 +95,11 @@ pub struct TaskInner {
 
     kstack: Option<TaskStack>,
     ctx: UnsafeCell<TaskContext>,
+
+    task_type: TaskType,
+
+    #[cfg(feature = "tls")]
+    tls: TlsArea,
 }
 
 impl TaskId {
