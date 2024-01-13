@@ -11,6 +11,8 @@ use memory_addr::{align_up_4k, VirtAddr};
 
 use crate::{AxRunQueue, AxTask, AxTaskRef, WaitQueue};
 
+use axhal::arch::TrapFrame;
+
 /// A unique identifier for a thread.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct TaskId(u64);
@@ -26,35 +28,18 @@ pub(crate) enum TaskState {
 }
 
 pub struct ProcessInner {
-    #[cfg(feature = "monolithic")]
+    process_id: AtomicU64,
     /// 是否是所属进程下的主线程
     is_leader: AtomicBool,
 
-    #[cfg(feature = "monolithic")]
     /// 初始化的trap上下文
     pub trap_frame: UnsafeCell<TrapFrame>,
 
-    #[cfg(feature = "monolithic")]
     pub page_table_token: usize,
 
-    #[cfg(feature = "monolithic")]
     set_child_tid: AtomicU64,
 
-    #[cfg(feature = "monolithic")]
     clear_child_tid: AtomicU64,
-
-    // 时间统计, 无论是否为宏内核架构都可能被使用到
-    #[allow(unused)]
-    time: UnsafeCell<TimeStat>,
-
-    #[cfg(feature = "monolithic")]
-    pub cpu_set: AtomicU64,
-
-    #[cfg(feature = "signal")]
-    /// 退出时是否向父进程发送SIG_CHILD
-    pub send_sigchld_when_exit: bool,
-
-    pub sched_status: UnsafeCell<SchedStatus>,
 }
 
 pub struct VcpuInner {
@@ -65,10 +50,10 @@ pub struct VcpuInner {
 enum TaskType {
     /// ArceOS task.
     Task,
-    /// User process. Refaer to `https://github.com/Azure-stars/Starry`
-    Process(ProcessInner),
-    /// Virtual CPU. Refer to `Vcpu` struct in crates/hypercraft/arch/${ARCH}/vcpu.rs
-    Vcpu(VcpuInner),
+    /// User process.
+    Process,
+    /// Virtual CPU.
+    Vcpu,
 }
 
 /// The inner task structure.
@@ -94,16 +79,18 @@ pub struct TaskInner {
     wait_for_exit: WaitQueue,
 
     kstack: Option<TaskStack>,
+    /// On unikernel, this field stores the context of task.
+    /// On Process, this field stores the kernel context of thread.
+    /// On Vcpu, this field stores the kernel context of root-mode.
     ctx: UnsafeCell<TaskContext>,
 
     task_type: TaskType,
-
-    #[cfg(feature = "tls")]
-    tls: TlsArea,
+    process_inner: Option<Arc<ProcessInner>>,
+    vcpu_inner: Option<Box<VcpuInner>>,
 }
 
 impl TaskId {
-    fn new() -> Self {
+    pub fn new() -> Self {
         static ID_COUNTER: AtomicU64 = AtomicU64::new(1);
         Self(ID_COUNTER.fetch_add(1, Ordering::Relaxed))
     }
@@ -154,11 +141,20 @@ impl TaskInner {
             .wait_until(|| self.state() == TaskState::Exited);
         Some(self.exit_code.load(Ordering::Acquire))
     }
+
+    /// 获取内核栈栈顶
+    #[inline]
+    pub fn get_kernel_stack_top(&self) -> Option<usize> {
+        if let Some(kstack) = &self.kstack {
+            return Some(kstack.top().as_usize());
+        }
+        None
+    }
 }
 
 // private methods
 impl TaskInner {
-    const fn new_common(id: TaskId, name: String) -> Self {
+    const fn new_common(id: TaskId, name: String, task_type: TaskType) -> Self {
         Self {
             id,
             name,
@@ -177,6 +173,9 @@ impl TaskInner {
             wait_for_exit: WaitQueue::new(),
             kstack: None,
             ctx: UnsafeCell::new(TaskContext::new()),
+            task_type,
+            process_inner: None,
+            vcpu_inner: None,
         }
     }
 
@@ -184,7 +183,7 @@ impl TaskInner {
     where
         F: FnOnce() + Send + 'static,
     {
-        let mut t = Self::new_common(TaskId::new(), name);
+        let mut t = Self::new_common(TaskId::new(), name, TaskType::Task);
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
         t.entry = Some(Box::into_raw(Box::new(entry)));
@@ -198,7 +197,7 @@ impl TaskInner {
 
     pub(crate) fn new_init(name: String) -> AxTaskRef {
         // init_task does not change PC and SP, so `entry` and `kstack` fields are not used.
-        let mut t = Self::new_common(TaskId::new(), name);
+        let mut t = Self::new_common(TaskId::new(), name, TaskType::Task);
         t.is_init = true;
         if t.name == "idle" {
             t.is_idle = true;
@@ -309,6 +308,163 @@ impl TaskInner {
     #[inline]
     pub(crate) const unsafe fn ctx_mut_ptr(&self) -> *mut TaskContext {
         self.ctx.get()
+    }
+}
+
+impl TaskInner {
+    pub fn new_process<F>(
+        entry: F,
+        name: String,
+        stack_size: usize,
+        process_id: u64,
+        page_table_token: usize,
+    ) -> AxTaskRef
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let mut t = Self::new_common(TaskId::new(), name, TaskType::Process);
+        debug!("new task: {}", t.id_name());
+        let kstack = TaskStack::alloc(align_up_4k(stack_size));
+        t.entry = Some(Box::into_raw(Box::new(entry)));
+        t.ctx.get_mut().init(task_entry as usize, kstack.top());
+        t.kstack = Some(kstack);
+        if t.name == "idle" {
+            t.is_idle = true;
+        }
+
+        let process_inner = ProcessInner {
+            process_id: AtomicU64::new(process_id),
+            is_leader: AtomicBool::new(true),
+            trap_frame: UnsafeCell::new(TrapFrame::default()),
+            page_table_token: 0,
+            set_child_tid: AtomicU64::new(0),
+            clear_child_tid: AtomicU64::new(0),
+        };
+
+        t.process_inner = Some(Arc::new(process_inner));
+
+        Arc::new(AxTask::new(t))
+    }
+
+    pub fn set_child_tid(&self, tid: usize) {
+        self.process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .set_child_tid
+            .store(tid as u64, Ordering::Release)
+    }
+
+    pub fn set_clear_child_tid(&self, tid: usize) {
+        self.process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .clear_child_tid
+            .store(tid as u64, Ordering::Release)
+    }
+
+    pub fn get_clear_child_tid(&self) -> usize {
+        self.process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .clear_child_tid
+            .load(Ordering::Acquire) as usize
+    }
+
+    #[inline]
+    pub fn get_page_table_token(&self) -> usize {
+        self.process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .page_table_token
+    }
+
+    #[inline]
+    pub fn get_process_id(&self) -> u64 {
+        self.process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .process_id
+            .load(Ordering::Acquire)
+    }
+
+    #[inline]
+    pub fn set_process_id(&self, process_id: u64) {
+        self.process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .process_id
+            .store(process_id, Ordering::Release);
+    }
+
+    /// 获取内核栈的第一个trap上下文
+    #[inline]
+    pub fn get_first_trap_frame(&self) -> *mut TrapFrame {
+        if let Some(kstack) = &self.kstack {
+            return kstack.get_first_trap_frame();
+        }
+        unreachable!("get_first_trap_frame: kstack is None");
+    }
+
+    pub fn set_leader(&self, is_lead: bool) {
+        self.process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .is_leader
+            .store(is_lead, Ordering::Release);
+    }
+
+    pub fn is_leader(&self) -> bool {
+        self.process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .is_leader
+            .load(Ordering::Acquire)
+    }
+
+    /// 设置Trap上下文
+    pub fn set_trap_context(&self, trap_frame: TrapFrame) {
+        let now_trap_frame = self
+            .process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .trap_frame
+            .get();
+        unsafe {
+            *now_trap_frame = trap_frame;
+        }
+    }
+    /// 将trap上下文直接写入到内核栈上
+    /// 注意此时保持sp不变
+    /// 返回值为压入了trap之后的内核栈的栈顶，可以用于多层trap压入
+    pub fn set_trap_in_kernel_stack(&self) {
+        extern "C" {
+            pub fn __copy(frame_address: *mut TrapFrame, kernel_base: usize);
+        }
+        let trap_frame_size = core::mem::size_of::<TrapFrame>();
+        let frame_address = self
+            .process_inner
+            .unwrap_or_else(|| panic!("not a process"))
+            .trap_frame
+            .get();
+        let kernel_base = self.get_kernel_stack_top().unwrap() - trap_frame_size;
+        unsafe {
+            __copy(frame_address, kernel_base);
+        }
+    }
+}
+
+impl TaskInner {
+    pub fn new_vcpu<F>(
+        entry: F,
+        name: String,
+        stack_size: usize,
+        vcpu_id: u64,
+        page_table_token: usize,
+    ) -> AxTaskRef
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let mut t = Self::new_common(TaskId::new(), name, TaskType::Vcpu);
+        debug!("new task: {}", t.id_name());
+        let kstack = TaskStack::alloc(align_up_4k(stack_size));
+        t.entry = Some(Box::into_raw(Box::new(entry)));
+        t.ctx.get_mut().init(task_entry as usize, kstack.top());
+        t.kstack = Some(kstack);
+        if t.name == "idle" {
+            t.is_idle = true;
+        }
+        Arc::new(AxTask::new(t))
     }
 }
 

@@ -39,6 +39,37 @@ impl TrapFrame {
     pub const fn is_user(&self) -> bool {
         self.cs & 0b11 == 3
     }
+
+    fn exception_pc(&self) -> usize {
+        self.rip as usize
+    }
+
+    fn set_exception_pc(&mut self, pc: usize) {
+        self.rip = pc as u64;
+    }
+
+    fn stack_pointer(&self) -> usize {
+        self.rsp as usize
+    }
+
+    fn set_stack_pointer(&mut self, sp: usize) {
+        self.rsp = sp as u64;
+    }
+
+    /// 用于第一次进入应用程序时的初始化
+    pub fn app_init_context(app_entry: usize, user_sp: usize) -> Self {
+        let mut trap_frame = TrapFrame::default();
+        trap_frame.set_stack_pointer(user_sp);
+        trap_frame.set_exception_pc(app_entry);
+
+        unsafe {
+            // a0为参数个数
+            // a1存储的是用户栈底，即argv
+            trap_frame.rdi = *(user_sp as *const u64);
+            trap_frame.rsi = *(user_sp as *const u64).add(1);
+        }
+        trap_frame
+    }
 }
 
 #[repr(C)]
