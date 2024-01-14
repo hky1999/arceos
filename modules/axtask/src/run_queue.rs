@@ -195,6 +195,16 @@ impl AxRunQueue {
             let prev_ctx_ptr = prev_task.ctx_mut_ptr();
             let next_ctx_ptr = next_task.ctx_mut_ptr();
 
+
+            trace!(
+                "context switch ptr: prev {:#p} {:?}",
+                prev_ctx_ptr, *prev_ctx_ptr
+            );
+            trace!(
+                "context switch ptr: next {:#p} {:?}",
+                next_ctx_ptr, *next_ctx_ptr
+            );
+
             // The strong reference count of `prev_task` will be decremented by 1,
             // but won't be dropped until `gc_entry()` is called.
             assert!(Arc::strong_count(prev_task.as_task_ref()) > 1);

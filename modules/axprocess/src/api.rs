@@ -166,11 +166,28 @@ pub fn load_app(
     loader.load(args, envs, memory_set)
 }
 
+/*Refer to https://github.com/ponaskovas/include_bytes_aligned */
+#[macro_export]
+macro_rules! include_bytes_aligned {
+    ($align_to:expr, $path:expr) => {{
+        #[repr(C, align($align_to))]
+        struct __Aligned<T: ?Sized>(T);
+
+        static __DATA: &'static __Aligned<[u8]> = &__Aligned(*include_bytes!($path));
+
+        &__DATA.0
+    }};
+}
+
 /// load `hello` elf from ./testcases, for tmp use.
 pub fn load_hello_app(memory_set: &mut MemorySet) -> AxResult<(VirtAddr, VirtAddr, VirtAddr)> {
-    static HELLO: &'static [u8] = include_bytes!("hello");
+    // Has to be aligned with `HeaderPt1` inside xmas-elf, so we used a alignment here.
+    static HELLO: &'static [u8] = include_bytes_aligned!(0x1000, "hello");
+    
     let elf_data = HELLO;
-    debug!("app elf data length: {}", elf_data.len());
+    debug!("app elf data length: {} at {:#p}", elf_data.len(), elf_data);
+
+    debug!("app elf data: [{:x} {:x} {:x} {:x}]", elf_data[0], elf_data[1],elf_data[2],elf_data[3]);
 
     let loader = Loader::new(&elf_data);
 

@@ -255,6 +255,8 @@ impl Process {
                 error!("Failed to load hello");
                 return Err(AxError::NotFound);
             };
+    
+        debug!("entry at {:?}, user_stack_bottom {:?} heap_bottom {:?}", entry, user_stack_bottom, heap_bottom);
         let new_process = Arc::new(Self::new(
             TaskId::new().as_u64(),
             KERNEL_PROCESS_ID,

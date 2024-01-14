@@ -20,6 +20,6 @@ axerrno = { path = "../../crates/axerrno" }
 axfs = { path = "../axfs" }
 axio = { path = "../../crates/axio" }
 spinlock = { path = "../../crates/spinlock" }
-xmas-elf = "0.9.0"
+xmas-elf = "0.9.1"
 riscv = "0.10"
 page_table_entry = { path = "../../crates/page_table_entry" }
