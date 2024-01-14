@@ -166,7 +166,16 @@ pub fn load_app(
     loader.load(args, envs, memory_set)
 }
 
+/// load `hello` elf from ./testcases, for tmp use.
+pub fn load_hello_app(memory_set: &mut MemorySet) -> AxResult<(VirtAddr, VirtAddr, VirtAddr)> {
+    static HELLO: &'static [u8] = include_bytes!("hello");
+    let elf_data = HELLO;
+    debug!("app elf data length: {}", elf_data.len());
 
+    let loader = Loader::new(&elf_data);
+
+    loader.load(vec![], vec![], memory_set)
+}
 
 pub fn handle_page_fault(addr: VirtAddr, flags: MappingFlags) {
     axlog::debug!("'page fault' addr: {:?}, flags: {:?}", addr, flags);

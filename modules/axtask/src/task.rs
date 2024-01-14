@@ -428,9 +428,6 @@ impl TaskInner {
     /// 注意此时保持sp不变
     /// 返回值为压入了trap之后的内核栈的栈顶，可以用于多层trap压入
     pub fn set_trap_in_kernel_stack(&self) {
-        extern "C" {
-            pub fn __copy(frame_address: *mut TrapFrame, kernel_base: usize);
-        }
         let trap_frame_size = core::mem::size_of::<TrapFrame>();
         let frame_address = self
             .process_inner.as_ref()
@@ -438,9 +435,13 @@ impl TaskInner {
             .trap_frame
             .get();
         let kernel_base = self.get_kernel_stack_top().unwrap() - trap_frame_size;
-        unsafe {
-            __copy(frame_address, kernel_base);
-        }
+
+		let context_frame = kernel_base as *mut TrapFrame;
+
+		unsafe {
+			*context_frame = *frame_address;
+		}
+		
     }
 }
 

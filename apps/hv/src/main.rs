@@ -51,9 +51,15 @@ mod device;
 #[path = "device/dummy.rs"]
 mod device;
 
+mod process;
+
 #[no_mangle]
 fn main(hart_id: usize) {
     println!("Hello, hv!");
+
+	process::hello();
+
+	loop{}
 
     #[cfg(target_arch = "riscv64")]
     {

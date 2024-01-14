@@ -17,7 +17,7 @@ features-$(NET) += libax/net
 features-$(GRAPHIC) += libax/display
 features-$(HV) += libax/hv 
 
-ifeq ($(STRUCT),Combination)
+ifeq ($(STRUCT), Combination)
 features-$(HV) += libax/monolithic 
 endif
 

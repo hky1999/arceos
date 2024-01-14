@@ -237,6 +237,85 @@ impl Process {
         RUN_QUEUE.lock().add_task(Arc::clone(&new_task));
         Ok(new_task)
     }
+
+    /// TMP: Create simple hello process
+    pub fn init_hello() -> AxResult<AxTaskRef> {
+        let mut memory_set = MemorySet::new_with_kernel_mapped();
+        let page_table_token = memory_set.page_table_token();
+        // if page_table_token != 0 {
+        //     unsafe {
+        //         write_page_table_root(page_table_token.into());
+        //         riscv::register::sstatus::set_sum();
+        //     };
+        // }
+        let (entry, user_stack_bottom, heap_bottom) =
+            if let Ok(ans) = crate::load_hello_app(&mut memory_set) {
+                ans
+            } else {
+                error!("Failed to load hello");
+                return Err(AxError::NotFound);
+            };
+        let new_process = Arc::new(Self::new(
+            TaskId::new().as_u64(),
+            KERNEL_PROCESS_ID,
+            Arc::new(Mutex::new(memory_set)),
+            heap_bottom.as_usize() as u64,
+            vec![
+                // 标准输入
+                Some(Arc::new(Stdin {
+                    flags: Mutex::new(OpenFlags::empty()),
+                })),
+                // 标准输出
+                Some(Arc::new(Stdout {
+                    flags: Mutex::new(OpenFlags::empty()),
+                })),
+                // 标准错误
+                Some(Arc::new(Stderr {
+                    flags: Mutex::new(OpenFlags::empty()),
+                })),
+            ],
+        ));
+        let new_task = TaskInner::new_process(
+            || {},
+            String::from("hello"),
+            axconfig::TASK_STACK_SIZE,
+            new_process.pid(),
+            page_table_token,
+        );
+        TID2TASK
+            .lock()
+            .insert(new_task.id().as_u64(), Arc::clone(&new_task));
+        new_task.set_leader(true);
+        let new_trap_frame =
+            TrapFrame::app_init_context(entry.as_usize(), user_stack_bottom.as_usize());
+        new_task.set_trap_context(new_trap_frame);
+        // 需要将完整内容写入到内核栈上，first_into_user并不会复制到内核栈上
+        new_task.set_trap_in_kernel_stack();
+        new_process.tasks.lock().push(Arc::clone(&new_task));
+        #[cfg(feature = "signal")]
+        new_process
+            .signal_modules
+            .lock()
+            .insert(new_task.id().as_u64(), SignalModule::init_signal(None));
+        new_process
+            .robust_list
+            .lock()
+            .insert(new_task.id().as_u64(), FutexRobustList::default());
+        PID2PC
+            .lock()
+            .insert(new_process.pid(), Arc::clone(&new_process));
+        // 将其作为内核进程的子进程
+        match PID2PC.lock().get(&KERNEL_PROCESS_ID) {
+            Some(kernel_process) => {
+                kernel_process.children.lock().push(new_process);
+            }
+            None => {
+                return Err(AxError::NotFound);
+            }
+        }
+        RUN_QUEUE.lock().add_task(Arc::clone(&new_task));
+        Ok(new_task)
+    }
 }
 
 impl Process {
@@ -520,9 +599,9 @@ impl Process {
         let mut trap_frame = unsafe { *(current_task.get_first_trap_frame()) }.clone();
         drop(current_task);
         // 新开的进程/线程返回值为0
-		trap_frame.set_return_value(0);
+        trap_frame.set_return_value(0);
         // trap_frame.regs.a0 = 0;
-		// Todo: use fs_base.
+        // Todo: use fs_base.
         // if flags.contains(CloneFlags::CLONE_SETTLS) {
         //     trap_frame.regs.tp = tls;
         // }
@@ -531,7 +610,7 @@ impl Process {
         // 若没有给定用户栈，则使用当前用户栈
         // 没有给定用户栈的时候，只能是共享了地址空间，且原先调用clone的有用户栈，此时已经在之前的trap clone时复制了
         if let Some(stack) = stack {
-			trap_frame.set_stack_pointer(stack);
+            trap_frame.set_stack_pointer(stack);
             // trap_frame.regs.sp = stack;
             // info!(
             //     "New user stack: sepc:{:X}, stack:{:X}",
