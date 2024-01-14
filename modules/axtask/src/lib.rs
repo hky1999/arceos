@@ -34,7 +34,10 @@ cfg_if::cfg_if! {
         extern crate log;
         extern crate alloc;
         mod run_queue;
+		pub use run_queue::{IDLE_TASK, RUN_QUEUE, EXITED_TASKS};
+
         mod task;
+		pub use task::TaskState;
         mod wait_queue;
 
         #[cfg(feature = "irq")]

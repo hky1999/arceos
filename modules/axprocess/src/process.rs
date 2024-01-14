@@ -270,8 +270,8 @@ impl Process {
         }
         // 当前任务被设置为主线程
         current_task.set_leader(true);
-        // 重置统计时间
-        current_task.time_stat_clear();
+        // // 重置统计时间
+        // current_task.time_stat_clear();
         assert!(tasks.len() == 1);
         drop(tasks);
         let args = if args.len() == 0 {
@@ -334,7 +334,7 @@ impl Process {
         flags: CloneFlags,
         stack: Option<usize>,
         ptid: usize,
-        tls: usize,
+        _tls: usize,
         ctid: usize,
         #[cfg(feature = "signal")] sig_child: bool,
     ) -> AxResult<u64> {
@@ -520,16 +520,19 @@ impl Process {
         let mut trap_frame = unsafe { *(current_task.get_first_trap_frame()) }.clone();
         drop(current_task);
         // 新开的进程/线程返回值为0
-        trap_frame.regs.a0 = 0;
-        if flags.contains(CloneFlags::CLONE_SETTLS) {
-            trap_frame.regs.tp = tls;
-        }
+		trap_frame.set_return_value(0);
+        // trap_frame.regs.a0 = 0;
+		// Todo: use fs_base.
+        // if flags.contains(CloneFlags::CLONE_SETTLS) {
+        //     trap_frame.regs.tp = tls;
+        // }
         // 设置用户栈
         // 若给定了用户栈，则使用给定的用户栈
         // 若没有给定用户栈，则使用当前用户栈
         // 没有给定用户栈的时候，只能是共享了地址空间，且原先调用clone的有用户栈，此时已经在之前的trap clone时复制了
         if let Some(stack) = stack {
-            trap_frame.regs.sp = stack;
+			trap_frame.set_stack_pointer(stack);
+            // trap_frame.regs.sp = stack;
             // info!(
             //     "New user stack: sepc:{:X}, stack:{:X}",
             //     trap_frame.sepc, trap_frame.regs.sp

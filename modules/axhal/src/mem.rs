@@ -124,8 +124,8 @@ pub(crate) fn common_memory_region_at(idx: usize) -> Option<MemRegion> {
             name: ".data",
         },
         3 => MemRegion {
-            paddr: virt_to_phys((percpu_start as usize).into()),
-            size: percpu_end as usize - percpu_start as usize,
+            paddr: virt_to_phys((_percpu_start as usize).into()),
+            size: _percpu_end as usize - _percpu_start as usize,
             flags: MemRegionFlags::RESERVED | MemRegionFlags::READ | MemRegionFlags::WRITE,
             name: ".percpu",
         },
@@ -175,6 +175,6 @@ extern "C" {
     fn ebss();
     fn boot_stack();
     fn boot_stack_top();
-    fn percpu_start();
-    fn percpu_end();
+    fn _percpu_start();
+    fn _percpu_end();
 }

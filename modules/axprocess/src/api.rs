@@ -140,7 +140,7 @@ pub fn exit_current_task(exit_code: i32) -> ! {
         process.signal_modules.lock().remove(&curr_id);
         drop(process);
     }
-    RUN_QUEUE.lock().exit_current(exit_code);
+    RUN_QUEUE.lock().exit_current(exit_code)
 }
 
 /// 返回应用程序入口，用户栈底，用户堆底
@@ -166,25 +166,7 @@ pub fn load_app(
     loader.load(args, envs, memory_set)
 }
 
-/// 当从内核态到用户态时，统计对应进程的时间信息
-pub fn time_stat_from_kernel_to_user() {
-    let curr_task = current();
-    curr_task.time_stat_from_kernel_to_user();
-}
 
-#[no_mangle]
-/// 当从用户态到内核态时，统计对应进程的时间信息
-pub fn time_stat_from_user_to_kernel() {
-    let curr_task = current();
-    curr_task.time_stat_from_user_to_kernel();
-}
-
-/// 统计时间输出
-/// (用户态秒，用户态微妙，内核态秒，内核态微妙)
-pub fn time_stat_output() -> (usize, usize, usize, usize) {
-    let curr_task = current();
-    curr_task.time_stat_output()
-}
 
 pub fn handle_page_fault(addr: VirtAddr, flags: MappingFlags) {
     axlog::debug!("'page fault' addr: {:?}, flags: {:?}", addr, flags);

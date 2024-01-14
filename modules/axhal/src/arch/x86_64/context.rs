@@ -4,7 +4,7 @@ use memory_addr::VirtAddr;
 /// Saved registers when a trap (interrupt or exception) occurs.
 #[allow(missing_docs)]
 #[repr(C)]
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct TrapFrame {
     pub rax: u64,
     pub rcx: u64,
@@ -44,7 +44,7 @@ impl TrapFrame {
     //     self.rip as usize
     // }
 
-    fn set_exception_pc(&mut self, pc: usize) {
+    pub fn set_exception_pc(&mut self, pc: usize) {
         self.rip = pc as u64;
     }
 
@@ -52,9 +52,13 @@ impl TrapFrame {
     //     self.rsp as usize
     // }
 
-    fn set_stack_pointer(&mut self, sp: usize) {
+    pub fn set_stack_pointer(&mut self, sp: usize) {
         self.rsp = sp as u64;
     }
+
+	pub fn set_return_value(&mut self, value: usize) {
+		self.rax = value as u64;
+	}
 
     /// 用于第一次进入应用程序时的初始化
     pub fn app_init_context(app_entry: usize, user_sp: usize) -> Self {

@@ -20,7 +20,7 @@ pub struct TaskId(u64);
 /// The possible states of a task.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) enum TaskState {
+pub enum TaskState {
     Running = 1,
     Ready = 2,
     Blocked = 3,
@@ -206,7 +206,7 @@ impl TaskInner {
     }
 
     #[inline]
-    pub(crate) fn state(&self) -> TaskState {
+    pub fn state(&self) -> TaskState {
         self.state.load(Ordering::Acquire).into()
     }
 
