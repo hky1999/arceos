@@ -326,42 +326,47 @@ impl TaskInner {
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
         t.entry = Some(Box::into_raw(Box::new(entry)));
-        t.ctx.get_mut().init(task_entry as usize, kstack.top());
+        t.ctx.get_mut().init(
+            task_entry as usize,
+            kstack.top() - core::mem::size_of::<TrapFrame>(),
+        );
+
         t.kstack = Some(kstack);
         if t.name == "idle" {
             t.is_idle = true;
         }
 
-        let process_inner = ProcessInner {
+        t.process_inner = Some(ProcessInner {
             process_id: AtomicU64::new(process_id),
             is_leader: AtomicBool::new(true),
             trap_frame: UnsafeCell::new(TrapFrame::default()),
-            page_table_token: 0,
+            page_table_token,
             set_child_tid: AtomicU64::new(0),
             clear_child_tid: AtomicU64::new(0),
-        };
-
-        t.process_inner = Some(process_inner);
+        });
 
         Arc::new(AxTask::new(t))
     }
 
     pub fn set_child_tid(&self, tid: usize) {
-        self.process_inner.as_ref()
+        self.process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .set_child_tid
             .store(tid as u64, Ordering::Release)
     }
 
     pub fn set_clear_child_tid(&self, tid: usize) {
-        self.process_inner.as_ref()
+        self.process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .clear_child_tid
             .store(tid as u64, Ordering::Release)
     }
 
     pub fn get_clear_child_tid(&self) -> usize {
-        self.process_inner.as_ref()
+        self.process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .clear_child_tid
             .load(Ordering::Acquire) as usize
@@ -369,14 +374,16 @@ impl TaskInner {
 
     #[inline]
     pub fn get_page_table_token(&self) -> usize {
-        self.process_inner.as_ref()
+        self.process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .page_table_token
     }
 
     #[inline]
     pub fn get_process_id(&self) -> u64 {
-        self.process_inner.as_ref()
+        self.process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .process_id
             .load(Ordering::Acquire)
@@ -384,7 +391,8 @@ impl TaskInner {
 
     #[inline]
     pub fn set_process_id(&self, process_id: u64) {
-        self.process_inner.as_ref()
+        self.process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .process_id
             .store(process_id, Ordering::Release);
@@ -400,14 +408,16 @@ impl TaskInner {
     }
 
     pub fn set_leader(&self, is_lead: bool) {
-        self.process_inner.as_ref()
+        self.process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .is_leader
             .store(is_lead, Ordering::Release);
     }
 
     pub fn is_leader(&self) -> bool {
-        self.process_inner.as_ref()
+        self.process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .is_leader
             .load(Ordering::Acquire)
@@ -416,7 +426,8 @@ impl TaskInner {
     /// 设置Trap上下文
     pub fn set_trap_context(&self, trap_frame: TrapFrame) {
         let now_trap_frame = self
-            .process_inner.as_ref()
+            .process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .trap_frame
             .get();
@@ -428,20 +439,19 @@ impl TaskInner {
     /// 注意此时保持sp不变
     /// 返回值为压入了trap之后的内核栈的栈顶，可以用于多层trap压入
     pub fn set_trap_in_kernel_stack(&self) {
-        let trap_frame_size = core::mem::size_of::<TrapFrame>();
         let frame_address = self
-            .process_inner.as_ref()
+            .process_inner
+            .as_ref()
             .unwrap_or_else(|| panic!("not a process"))
             .trap_frame
             .get();
-        let kernel_base = self.get_kernel_stack_top().unwrap() - trap_frame_size;
+        let kernel_base = self.get_kernel_stack_top().unwrap() - core::mem::size_of::<TrapFrame>();
 
-		let context_frame = kernel_base as *mut TrapFrame;
+        let trap_frame = kernel_base as *mut TrapFrame;
 
-		unsafe {
-			*context_frame = *frame_address;
-		}
-		
+        unsafe {
+            *trap_frame = *frame_address;
+        }
     }
 }
 

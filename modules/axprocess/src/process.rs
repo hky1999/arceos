@@ -255,8 +255,11 @@ impl Process {
                 error!("Failed to load hello");
                 return Err(AxError::NotFound);
             };
-    
-        debug!("entry at {:?}, user_stack_bottom {:?} heap_bottom {:?}", entry, user_stack_bottom, heap_bottom);
+
+        debug!(
+            "entry at {:?}, user_stack_bottom {:?} heap_bottom {:?}",
+            entry, user_stack_bottom, heap_bottom
+        );
         let new_process = Arc::new(Self::new(
             TaskId::new().as_u64(),
             KERNEL_PROCESS_ID,
@@ -291,7 +294,7 @@ impl Process {
         let new_trap_frame =
             TrapFrame::app_init_context(entry.as_usize(), user_stack_bottom.as_usize());
         new_task.set_trap_context(new_trap_frame);
-        // 需要将完整内容写入到内核栈上，first_into_user并不会复制到内核栈上
+        // 需要将完整内容写入到内核栈上，`first_into_user`并不会复制到内核栈上
         new_task.set_trap_in_kernel_stack();
         new_process.tasks.lock().push(Arc::clone(&new_task));
         #[cfg(feature = "signal")]
