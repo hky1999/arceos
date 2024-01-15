@@ -144,9 +144,9 @@ impl TaskInner {
 
     /// 获取内核栈栈顶
     #[inline]
-    pub fn get_kernel_stack_top(&self) -> Option<usize> {
+    pub fn get_kernel_stack_top(&self) -> Option<VirtAddr> {
         if let Some(kstack) = &self.kstack {
-            return Some(kstack.top().as_usize());
+            return Some(kstack.top());
         }
         None
     }
@@ -327,7 +327,7 @@ impl TaskInner {
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
         t.entry = Some(Box::into_raw(Box::new(entry)));
         t.ctx.get_mut().init(
-            task_entry as usize,
+            process_entry as usize,
             kstack.top() - core::mem::size_of::<TrapFrame>(),
         );
 
@@ -447,7 +447,7 @@ impl TaskInner {
             .get();
         let kernel_base = self.get_kernel_stack_top().unwrap() - core::mem::size_of::<TrapFrame>();
 
-        let trap_frame = kernel_base as *mut TrapFrame;
+        let trap_frame = kernel_base.as_usize() as *mut TrapFrame;
 
         unsafe {
             *trap_frame = *frame_address;
@@ -470,7 +470,7 @@ impl TaskInner {
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
         t.entry = Some(Box::into_raw(Box::new(entry)));
-        t.ctx.get_mut().init(task_entry as usize, kstack.top());
+        t.ctx.get_mut().init(vcpu_entry as usize, kstack.top());
         t.kstack = Some(kstack);
         if t.name == "idle" {
             t.is_idle = true;
@@ -578,11 +578,44 @@ impl Deref for CurrentTask {
     }
 }
 
+// Todo: use `Enum` to distinguish `task_entry``.
+
 extern "C" fn task_entry() -> ! {
     // release the lock that was implicitly held across the reschedule
     unsafe { crate::RUN_QUEUE.force_unlock() };
 
-    debug!("task_entry ()");
+    #[cfg(feature = "irq")]
+    axhal::arch::enable_irqs();
+    let task = crate::current();
+    if let Some(entry) = task.entry {
+        unsafe { Box::from_raw(entry)() };
+    }
+    crate::exit(0);
+}
+
+extern "C" fn process_entry() -> ! {
+    // release the lock that was implicitly held across the reschedule
+    unsafe { crate::RUN_QUEUE.force_unlock() };
+
+    debug!("process_entry ()");
+
+    #[cfg(feature = "irq")]
+    axhal::arch::enable_irqs();
+    let task = crate::current();
+
+    let kernel_sp = task.get_kernel_stack_top().unwrap();
+    let trap_frame = unsafe { *task.get_first_trap_frame() };
+    // 切换页表已经在switch实现了
+	unsafe {
+		trap_frame.exec(kernel_sp)
+	}
+}
+
+extern "C" fn vcpu_entry() -> ! {
+    // release the lock that was implicitly held across the reschedule
+    unsafe { crate::RUN_QUEUE.force_unlock() };
+
+    debug!("vcpu_entry ()");
 
     #[cfg(feature = "irq")]
     axhal::arch::enable_irqs();

@@ -207,8 +207,8 @@ impl Process {
             .lock()
             .insert(new_task.id().as_u64(), Arc::clone(&new_task));
         new_task.set_leader(true);
-        let new_trap_frame =
-            TrapFrame::app_init_context(entry.as_usize(), user_stack_bottom.as_usize());
+        let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
+        new_trap_frame.app_init_args();
         new_task.set_trap_context(new_trap_frame);
         // 需要将完整内容写入到内核栈上，first_into_user并不会复制到内核栈上
         new_task.set_trap_in_kernel_stack();
@@ -291,8 +291,8 @@ impl Process {
             .lock()
             .insert(new_task.id().as_u64(), Arc::clone(&new_task));
         new_task.set_leader(true);
-        let new_trap_frame =
-            TrapFrame::app_init_context(entry.as_usize(), user_stack_bottom.as_usize());
+        let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
+        new_trap_frame.app_init_args();
         new_task.set_trap_context(new_trap_frame);
         // 需要将完整内容写入到内核栈上，`first_into_user`并不会复制到内核栈上
         new_task.set_trap_in_kernel_stack();
@@ -404,8 +404,8 @@ impl Process {
         }
 
         // user_stack_top = user_stack_top / PAGE_SIZE_4K * PAGE_SIZE_4K;
-        let new_trap_frame =
-            TrapFrame::app_init_context(entry.as_usize(), user_stack_bottom.as_usize());
+        let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
+        new_trap_frame.app_init_args();
         current_task.set_trap_context(new_trap_frame);
         current_task.set_trap_in_kernel_stack();
         Ok(())
@@ -600,28 +600,23 @@ impl Process {
             new_task.set_leader(true);
         }
         let current_task = current();
-        // 复制原有的trap上下文
-        let mut trap_frame = unsafe { *(current_task.get_first_trap_frame()) }.clone();
+
+        let old_trap_frame = unsafe { *(current_task.get_first_trap_frame()) }.clone();
         drop(current_task);
-        // 新开的进程/线程返回值为0
-        trap_frame.set_return_value(0);
-        // trap_frame.regs.a0 = 0;
-        // Todo: use fs_base.
-        // if flags.contains(CloneFlags::CLONE_SETTLS) {
-        //     trap_frame.regs.tp = tls;
-        // }
-        // 设置用户栈
-        // 若给定了用户栈，则使用给定的用户栈
-        // 若没有给定用户栈，则使用当前用户栈
-        // 没有给定用户栈的时候，只能是共享了地址空间，且原先调用clone的有用户栈，此时已经在之前的trap clone时复制了
-        if let Some(stack) = stack {
-            trap_frame.set_stack_pointer(stack);
-            // trap_frame.regs.sp = stack;
-            // info!(
-            //     "New user stack: sepc:{:X}, stack:{:X}",
-            //     trap_frame.sepc, trap_frame.regs.sp
-            // );
-        }
+
+        // 复制原有的trap上下文
+        let trap_frame = {
+            // 设置用户栈
+            // 若给定了用户栈，则使用给定的用户栈
+            // 若没有给定用户栈，则使用当前用户栈
+            // 没有给定用户栈的时候，只能是共享了地址空间，且原先调用clone的有用户栈，此时已经在之前的trap clone时复制了
+            if let Some(stack) = stack {
+                old_trap_frame.new_clone(VirtAddr::from(stack))
+            } else {
+                old_trap_frame.new_fork()
+            }
+        };
+
         new_task.set_trap_context(trap_frame);
         new_task.set_trap_in_kernel_stack();
         RUN_QUEUE.lock().add_task(new_task);

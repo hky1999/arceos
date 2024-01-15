@@ -1,6 +1,10 @@
 use core::{arch::asm, fmt};
 use memory_addr::VirtAddr;
 
+use x86_64::registers::rflags::RFlags;
+
+use super::gdt::GdtStruct;
+
 /// Saved registers when a trap (interrupt or exception) occurs.
 #[allow(missing_docs)]
 #[repr(C)]
@@ -30,49 +34,91 @@ pub struct TrapFrame {
     pub rip: u64,
     pub cs: u64,
     pub rflags: u64,
-    pub rsp: u64,
-    pub ss: u64,
+    pub user_rsp: u64,
+    pub user_ss: u64,
 }
 
 impl TrapFrame {
+    pub fn new_user(entry: VirtAddr, ustack_top: VirtAddr, arg0: usize) -> Self {
+        Self {
+            rdi: arg0 as _,
+            rip: entry.as_usize() as _,
+            cs: GdtStruct::UCODE64_SELECTOR.0 as _,
+            rflags: RFlags::INTERRUPT_FLAG.bits(), // IOPL = 0, IF = 1
+            user_rsp: ustack_top.as_usize() as _,
+            user_ss: GdtStruct::UDATA_SELECTOR.0 as _,
+            ..Default::default()
+        }
+    }
+
+    pub const fn new_clone(&self, ustack_top: VirtAddr) -> Self {
+        let mut tf = *self;
+        // cs, user_ss are not pushed into TrapFrame in syscall_entry
+        tf.cs = GdtStruct::UCODE64_SELECTOR.0 as _;
+        tf.user_ss = GdtStruct::UDATA_SELECTOR.0 as _;
+        tf.user_rsp = ustack_top.as_usize() as _;
+        tf.rax = 0; // for child thread, clone returns 0
+        tf
+    }
+
+    pub const fn new_fork(&self) -> Self {
+        let mut tf = *self;
+        // cs, user_ss are not pushed into TrapFrame in syscall_entry
+        tf.cs = GdtStruct::UCODE64_SELECTOR.0 as _;
+        tf.user_ss = GdtStruct::UDATA_SELECTOR.0 as _;
+        tf.rax = 0; // for child process, fork returns 0
+        tf
+    }
+
     /// Whether the trap is from userspace.
     pub const fn is_user(&self) -> bool {
         self.cs & 0b11 == 3
     }
 
-    // fn exception_pc(&self) -> usize {
-    //     self.rip as usize
-    // }
-
-    pub fn set_exception_pc(&mut self, pc: usize) {
-        self.rip = pc as u64;
-    }
-
-    // fn stack_pointer(&self) -> usize {
-    //     self.rsp as usize
-    // }
-
-    pub fn set_stack_pointer(&mut self, sp: usize) {
-        self.rsp = sp as u64;
-    }
-
-	pub fn set_return_value(&mut self, value: usize) {
-		self.rax = value as u64;
-	}
-
     /// 用于第一次进入应用程序时的初始化
-    pub fn app_init_context(app_entry: usize, user_sp: usize) -> Self {
-        let mut trap_frame = TrapFrame::default();
-        trap_frame.set_stack_pointer(user_sp);
-        trap_frame.set_exception_pc(app_entry);
+    pub fn app_init_args(&mut self) {
+        let user_sp = self.user_rsp;
 
         unsafe {
             // a0为参数个数
             // a1存储的是用户栈底，即argv
-            trap_frame.rdi = *(user_sp as *const u64);
-            trap_frame.rsi = *(user_sp as *const u64).add(1);
+            self.rdi = *(user_sp as *const u64);
+            self.rsi = *(user_sp as *const u64).add(1);
         }
-        trap_frame
+    }
+
+    pub unsafe fn exec(&self, kstack_top: VirtAddr) -> ! {
+        info!(
+            "user task start: entry={:#x}, ustack={:#x}, kstack={:#x}",
+            self.rip,
+            self.user_rsp,
+            kstack_top.as_usize(),
+        );
+        crate::arch::disable_irqs();
+
+        asm!("
+            mov     rsp, {tf}
+            pop     rax
+            pop     rcx
+            pop     rdx
+            pop     rbx
+            pop     rbp
+            pop     rsi
+            pop     rdi
+            pop     r8
+            pop     r9
+            pop     r10
+            pop     r11
+            pop     r12
+            pop     r13
+            pop     r14
+            pop     r15
+            add     rsp, 16     // pop vector, error_code
+            swapgs
+            iretq",
+            tf = in(reg) self,
+            options(noreturn),
+        )
     }
 }
 
