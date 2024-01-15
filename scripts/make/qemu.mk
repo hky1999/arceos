@@ -149,7 +149,7 @@ else
   qemu_args-$(ACCEL) += -cpu host,+x2apic -accel kvm
 endif
 
-qemu_args-debug += -cpu host,+x2apic -accel kvm -monitor unix:qemu-monitor-socket,server,nowait
+qemu_args-debug += -monitor unix:qemu-monitor-socket,server,nowait
 
 define run_qemu
   @printf "    $(CYAN_C)Running$(END_C) $(QEMU) $(qemu_args-y) $(1)\n"

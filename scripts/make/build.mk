@@ -22,5 +22,6 @@ endif
 
 $(OUT_BIN): _cargo_build $(OUT_ELF)
 	$(OBJCOPY) $(OUT_ELF) --strip-all -O binary $@
+	$(OBJDUMP) --demangle -d $(OUT_ELF) > ${OUT_ASM}
 
 .PHONY: _cargo_build

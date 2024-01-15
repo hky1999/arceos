@@ -210,7 +210,16 @@ impl AxRunQueue {
             assert!(Arc::strong_count(prev_task.as_task_ref()) > 1);
             assert!(Arc::strong_count(&next_task) >= 1);
 
-            CurrentTask::set_current(prev_task, next_task);
+			#[cfg(feature = "monolithic")]
+            {
+                let page_table_token = next_task.get_page_table_token();
+                if page_table_token != 0 {
+                    axhal::arch::write_page_table_root(page_table_token.into());
+                }
+            }
+
+            CurrentTask::set_current(prev_task, next_task);	
+
             (*prev_ctx_ptr).switch_to(&*next_ctx_ptr);
         }
     }

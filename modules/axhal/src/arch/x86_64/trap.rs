@@ -4,6 +4,8 @@ use super::context::TrapFrame;
 
 core::arch::global_asm!(include_str!("trap.S"));
 
+pub const SYSCALL_VECTOR: u8 = 0x80;
+
 const IRQ_VECTOR_START: u8 = 0x20;
 const IRQ_VECTOR_END: u8 = 0xff;
 
@@ -34,6 +36,18 @@ fn x86_trap_handler(tf: &mut TrapFrame) {
                 "#GP @ {:#x}, error_code={:#x}:\n{:#x?}",
                 tf.rip, tf.error_code, tf
             );
+        }
+		SYSCALL_VECTOR => {
+			debug!(
+				"SYSCALL_VECTOR @ {:#x}, rax {:#x}, rdi {:#x} rsi {:#x} rdx {:#x}",
+				tf.rip,
+				tf.rax,
+				tf.rdi,
+				tf.rsi,
+				tf.rdx,
+			);
+			tf.rax = 0;
+            // tf.rax = syscall(tf, tf.rax as _, tf.rdi as _, tf.rsi as _, tf.rdx as _) as u64
         }
         IRQ_VECTOR_START..=IRQ_VECTOR_END => crate::trap::handle_irq_extern(tf.vector as _),
         _ => {

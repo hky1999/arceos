@@ -36,7 +36,7 @@ endif
 
 # Platform
 ifeq ($(ARCH), x86_64)
-  ACCEL ?= y
+  ACCEL ?= n
   PLATFORM ?= pc-x86
   TARGET := x86_64-unknown-none
   BUS := pci
@@ -78,6 +78,7 @@ APP_NAME := $(shell basename $(APP))
 LD_SCRIPT := $(CURDIR)/modules/axhal/linker_$(PLATFORM).lds
 OUT_ELF := $(OUT_DIR)/$(APP_NAME)_$(PLATFORM).elf
 OUT_BIN := $(OUT_DIR)/$(APP_NAME)_$(PLATFORM).bin
+OUT_ASM := $(OUT_DIR)/$(APP_NAME)_$(PLATFORM).asm
 
 ifeq ($(HV), y)
 	LD_SCRIPT = $(CURDIR)/modules/axhal/linker_$(PLATFORM)_hv.lds
@@ -109,13 +110,15 @@ debug: build
 	$(GDB) $(OUT_ELF) \
 	  -ex 'target remote localhost:1234' \
 	  -ex 'b rust_entry' \
+	  	  -ex 'add-symbol-file /home/hky/projects/arceos/arceos-hypervisor/testcases/libc-static/hello' \
+	  -ex 'b __set_thread_area' \
 	  -ex 'continue' \
 	  -ex 'disp /16i $$pc'
 
 debug_linux: build
 	$(call run_qemu_debug)
 
-debug_linux_gdb:
+debug_linux_gdb:`
 	$(GDB) $(VMLINUX) \
 	  -ex 'target remote localhost:1234' \
 	  -ex 'hb start_kernel' \

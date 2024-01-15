@@ -4,6 +4,8 @@ use x86_64::addr::VirtAddr;
 use x86_64::structures::idt::{Entry, HandlerFunc, InterruptDescriptorTable};
 use x86_64::structures::DescriptorTablePointer;
 
+use crate::arch::x86_64::trap::SYSCALL_VECTOR;
+
 const NUM_INT: usize = 256;
 
 /// A wrapper of the Interrupt Descriptor Table (IDT).
@@ -32,7 +34,11 @@ impl IdtStruct {
             )
         };
         for i in 0..NUM_INT {
-            entries[i].set_handler_fn(unsafe { core::mem::transmute(ENTRIES[i]) });
+            let opt = entries[i].set_handler_fn(unsafe { core::mem::transmute(ENTRIES[i]) });
+            if i == SYSCALL_VECTOR as usize {
+                // syscall via `int 0x80`
+                opt.set_privilege_level(x86_64::PrivilegeLevel::Ring3);
+            }
         }
         idt
     }

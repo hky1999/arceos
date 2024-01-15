@@ -34,6 +34,8 @@ pub struct TrapFrame {
     pub rip: u64,
     pub cs: u64,
     pub rflags: u64,
+
+	// Pushed by CPU when trap from ring-3
     pub user_rsp: u64,
     pub user_ss: u64,
 }
@@ -95,6 +97,11 @@ impl TrapFrame {
             kstack_top.as_usize(),
         );
         crate::arch::disable_irqs();
+
+		// assert_eq!(
+        //     PerCpu::current().arch_data().as_ref().kernel_stack_top(),
+        //     kstack_top
+        // );
 
         asm!("
             mov     rsp, {tf}
@@ -266,6 +273,10 @@ impl TaskContext {
         }
         unsafe {
             // TODO: swtich tls
+			// PerCpu::current()
+            //     .arch_data()
+            //     .as_mut()
+            //     .set_kernel_stack_top(next_ctx.kstack_top);
             context_switch(&mut self.rsp, &next_ctx.rsp)
         }
     }

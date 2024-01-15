@@ -374,10 +374,14 @@ impl TaskInner {
 
     #[inline]
     pub fn get_page_table_token(&self) -> usize {
-        self.process_inner
-            .as_ref()
-            .unwrap_or_else(|| panic!("not a process"))
-            .page_table_token
+		match &self.process_inner {
+			Some(process_inner) => {
+				process_inner.page_table_token
+			},
+			None => {
+				0
+			}
+		}
     }
 
     #[inline]

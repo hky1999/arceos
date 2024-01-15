@@ -153,8 +153,10 @@ impl MemorySet {
                 }
 
                 debug!(
-                    "[new region] elf section [0x{:x}, 0x{:x})",
-                    start_va, end_va
+                    "[new region] elf section [0x{:x}, 0x{:x}), size {:#x}",
+                    start_va,
+                    end_va,
+                    ph.mem_size()
                 );
 
                 self.new_region(
