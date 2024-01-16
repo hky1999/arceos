@@ -66,6 +66,6 @@ members = [
     "modules/axmem",
     "modules/axfs",
     "modules/axvm",
-
-    "ulib/libax",
+	"modules/axsyscall",
+    "ulib/libax", 
 ]

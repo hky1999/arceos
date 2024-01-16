@@ -32,8 +32,16 @@ fn x86_syscall_handler(tf: &mut TrapFrame) {
         tf.rax, tf.rdi, tf.rsi, tf.rdx
     );
     trace!("{:?}", tf);
+    match tf.rax {
+        20 => {
+            tf.rax = tf.rdx;
+        }
+        60 => loop {},
+        _ => {
+            tf.rax = 0;
+        }
+    }
     // tf.rax = syscall(tf, tf.rax as _, tf.rdi as _, tf.rsi as _, tf.rdx as _) as u64;
-    tf.rax = 0;
 }
 
 pub fn init_percpu() {
