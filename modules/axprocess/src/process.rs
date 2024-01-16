@@ -196,22 +196,23 @@ impl Process {
                 })),
             ],
         ));
+
+        let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
+        new_trap_frame.app_init_args();
+
         let new_task = TaskInner::new_process(
             || {},
             path,
             axconfig::TASK_STACK_SIZE,
             new_process.pid(),
             page_table_token,
+            new_trap_frame,
         );
         TID2TASK
             .lock()
             .insert(new_task.id().as_u64(), Arc::clone(&new_task));
         new_task.set_leader(true);
-        let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
-        new_trap_frame.app_init_args();
-        new_task.set_trap_context(new_trap_frame);
-        // 需要将完整内容写入到内核栈上，first_into_user并不会复制到内核栈上
-        new_task.set_trap_in_kernel_stack();
+
         new_process.tasks.lock().push(Arc::clone(&new_task));
         #[cfg(feature = "signal")]
         new_process
@@ -280,22 +281,21 @@ impl Process {
                 })),
             ],
         ));
+		let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
+        new_trap_frame.app_init_args();
         let new_task = TaskInner::new_process(
             || {},
             String::from("hello"),
             axconfig::TASK_STACK_SIZE,
             new_process.pid(),
             page_table_token,
+			new_trap_frame
         );
         TID2TASK
             .lock()
             .insert(new_task.id().as_u64(), Arc::clone(&new_task));
         new_task.set_leader(true);
-        let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
-        new_trap_frame.app_init_args();
-        new_task.set_trap_context(new_trap_frame);
-        // 需要将完整内容写入到内核栈上，`first_into_user`并不会复制到内核栈上
-        new_task.set_trap_in_kernel_stack();
+        
         new_process.tasks.lock().push(Arc::clone(&new_task));
         #[cfg(feature = "signal")]
         new_process
@@ -327,7 +327,7 @@ impl Process {
     /// 将当前进程替换为指定的用户程序
     /// args为传入的参数
     /// 任务的统计时间会被重置
-    pub fn exec(&self, name: String, args: Vec<String>, envs: Vec<String>) -> AxResult<()> {
+    pub fn exec(&self, name: String, args: Vec<String>, envs: Vec<String>, tf: &mut TrapFrame) -> AxResult<()> {
         // 首先要处理原先进程的资源
         // 处理分配的页帧
         // 之后加入额外的东西之后再处理其他的包括信号等因素
@@ -406,8 +406,8 @@ impl Process {
         // user_stack_top = user_stack_top / PAGE_SIZE_4K * PAGE_SIZE_4K;
         let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
         new_trap_frame.app_init_args();
-        current_task.set_trap_context(new_trap_frame);
-        current_task.set_trap_in_kernel_stack();
+        
+		*tf = new_trap_frame;
         Ok(())
     }
 
@@ -451,12 +451,29 @@ impl Process {
             // 创建父子关系，此时以self作为父进程
             self.pid
         };
+
+		let old_trap_frame = unsafe { *(current().get_first_trap_frame()) }.clone();
+
+        // 复制原有的trap上下文
+        let trap_frame = {
+            // 设置用户栈
+            // 若给定了用户栈，则使用给定的用户栈
+            // 若没有给定用户栈，则使用当前用户栈
+            // 没有给定用户栈的时候，只能是共享了地址空间，且原先调用clone的有用户栈，此时已经在之前的trap clone时复制了
+            if let Some(stack) = stack {
+                old_trap_frame.new_clone(VirtAddr::from(stack))
+            } else {
+                old_trap_frame.new_fork()
+            }
+        };
+
         let new_task = TaskInner::new_process(
             || {},
             String::new(),
             axconfig::TASK_STACK_SIZE,
             process_id,
             new_memory_set.lock().page_table_token(),
+			trap_frame
         );
         debug!("new task:{}", new_task.id().as_u64());
         TID2TASK
@@ -599,26 +616,7 @@ impl Process {
         if !flags.contains(CloneFlags::CLONE_THREAD) {
             new_task.set_leader(true);
         }
-        let current_task = current();
 
-        let old_trap_frame = unsafe { *(current_task.get_first_trap_frame()) }.clone();
-        drop(current_task);
-
-        // 复制原有的trap上下文
-        let trap_frame = {
-            // 设置用户栈
-            // 若给定了用户栈，则使用给定的用户栈
-            // 若没有给定用户栈，则使用当前用户栈
-            // 没有给定用户栈的时候，只能是共享了地址空间，且原先调用clone的有用户栈，此时已经在之前的trap clone时复制了
-            if let Some(stack) = stack {
-                old_trap_frame.new_clone(VirtAddr::from(stack))
-            } else {
-                old_trap_frame.new_fork()
-            }
-        };
-
-        new_task.set_trap_context(trap_frame);
-        new_task.set_trap_in_kernel_stack();
         RUN_QUEUE.lock().add_task(new_task);
         Ok(return_id)
     }

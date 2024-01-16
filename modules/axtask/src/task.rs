@@ -7,7 +7,7 @@ use core::{alloc::Layout, cell::UnsafeCell, fmt, ptr::NonNull};
 use core::sync::atomic::AtomicUsize;
 
 use axhal::arch::TaskContext;
-use memory_addr::{align_up_4k, VirtAddr};
+use memory_addr::{align_up_4k, PhysAddr, VirtAddr};
 
 use crate::{AxRunQueue, AxTask, AxTaskRef, WaitQueue};
 
@@ -33,8 +33,7 @@ pub struct ProcessInner {
     is_leader: AtomicBool,
 
     /// 初始化的trap上下文
-    pub trap_frame: UnsafeCell<TrapFrame>,
-
+    // pub trap_frame: UnsafeCell<TrapFrame>,
     pub page_table_token: usize,
 
     set_child_tid: AtomicU64,
@@ -49,9 +48,9 @@ pub struct VcpuInner {
 #[derive(Debug)]
 pub enum TaskType {
     /// ArceOS task.
-    Task,
+    Task { entry: Option<*mut dyn FnOnce()> },
     /// User process.
-    Process,
+    Process { trap_frame: Box<TrapFrame> },
     /// Virtual CPU.
     Vcpu,
 }
@@ -63,7 +62,8 @@ pub struct TaskInner {
     is_idle: bool,
     is_init: bool,
 
-    entry: Option<*mut dyn FnOnce()>,
+    // entry: Option<*mut dyn FnOnce()>,
+    task_type: TaskType,
     state: AtomicU8,
 
     in_wait_queue: AtomicBool,
@@ -84,7 +84,6 @@ pub struct TaskInner {
     /// On Vcpu, this field stores the kernel context of root-mode.
     ctx: UnsafeCell<TaskContext>,
 
-    task_type: TaskType,
     process_inner: Option<ProcessInner>,
     vcpu_inner: Option<Box<VcpuInner>>,
 }
@@ -154,13 +153,13 @@ impl TaskInner {
 
 // private methods
 impl TaskInner {
-    const fn new_common(id: TaskId, name: String, task_type: TaskType) -> Self {
+    const fn new_common(id: TaskId, name: String) -> Self {
         Self {
             id,
             name,
             is_idle: false,
             is_init: false,
-            entry: None,
+            task_type: TaskType::Task { entry: None },
             state: AtomicU8::new(TaskState::Ready as u8),
             in_wait_queue: AtomicBool::new(false),
             #[cfg(feature = "irq")]
@@ -173,7 +172,6 @@ impl TaskInner {
             wait_for_exit: WaitQueue::new(),
             kstack: None,
             ctx: UnsafeCell::new(TaskContext::new()),
-            task_type,
             process_inner: None,
             vcpu_inner: None,
         }
@@ -183,11 +181,15 @@ impl TaskInner {
     where
         F: FnOnce() + Send + 'static,
     {
-        let mut t = Self::new_common(TaskId::new(), name, TaskType::Task);
+        let mut t = Self::new_common(TaskId::new(), name);
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
-        t.entry = Some(Box::into_raw(Box::new(entry)));
-        t.ctx.get_mut().init(task_entry as usize, kstack.top());
+        t.task_type = TaskType::Task {
+            entry: Some(Box::into_raw(Box::new(entry))),
+        };
+        // t.entry = Some(Box::into_raw(Box::new(entry)));
+		// Todo: pass the correct page table root.
+        t.ctx.get_mut().init(task_entry as usize, kstack.top(), PhysAddr::from(0));
         t.kstack = Some(kstack);
         if t.name == "idle" {
             t.is_idle = true;
@@ -197,7 +199,7 @@ impl TaskInner {
 
     pub(crate) fn new_init(name: String) -> AxTaskRef {
         // init_task does not change PC and SP, so `entry` and `kstack` fields are not used.
-        let mut t = Self::new_common(TaskId::new(), name, TaskType::Task);
+        let mut t = Self::new_common(TaskId::new(), name);
         t.is_init = true;
         if t.name == "idle" {
             t.is_idle = true;
@@ -318,17 +320,22 @@ impl TaskInner {
         stack_size: usize,
         process_id: u64,
         page_table_token: usize,
+        trap_frame: TrapFrame,
     ) -> AxTaskRef
     where
         F: FnOnce() + Send + 'static,
     {
-        let mut t = Self::new_common(TaskId::new(), name, TaskType::Process);
+        let mut t = Self::new_common(TaskId::new(), name);
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
-        t.entry = Some(Box::into_raw(Box::new(entry)));
+        // t.entry = Some(Box::into_raw(Box::new(entry)));
+        t.task_type = TaskType::Process {
+            trap_frame: Box::new(trap_frame),
+        };
         t.ctx.get_mut().init(
-            process_entry as usize,
-            kstack.top() - core::mem::size_of::<TrapFrame>(),
+            task_entry as usize,
+            kstack.top(),
+			page_table_token.into()
         );
 
         t.kstack = Some(kstack);
@@ -339,7 +346,7 @@ impl TaskInner {
         t.process_inner = Some(ProcessInner {
             process_id: AtomicU64::new(process_id),
             is_leader: AtomicBool::new(true),
-            trap_frame: UnsafeCell::new(TrapFrame::default()),
+            // trap_frame: UnsafeCell::new(TrapFrame::default()),
             page_table_token,
             set_child_tid: AtomicU64::new(0),
             clear_child_tid: AtomicU64::new(0),
@@ -374,14 +381,10 @@ impl TaskInner {
 
     #[inline]
     pub fn get_page_table_token(&self) -> usize {
-		match &self.process_inner {
-			Some(process_inner) => {
-				process_inner.page_table_token
-			},
-			None => {
-				0
-			}
-		}
+        match &self.process_inner {
+            Some(process_inner) => process_inner.page_table_token,
+            None => 0,
+        }
     }
 
     #[inline]
@@ -426,37 +429,6 @@ impl TaskInner {
             .is_leader
             .load(Ordering::Acquire)
     }
-
-    /// 设置Trap上下文
-    pub fn set_trap_context(&self, trap_frame: TrapFrame) {
-        let now_trap_frame = self
-            .process_inner
-            .as_ref()
-            .unwrap_or_else(|| panic!("not a process"))
-            .trap_frame
-            .get();
-        unsafe {
-            *now_trap_frame = trap_frame;
-        }
-    }
-    /// 将trap上下文直接写入到内核栈上
-    /// 注意此时保持sp不变
-    /// 返回值为压入了trap之后的内核栈的栈顶，可以用于多层trap压入
-    pub fn set_trap_in_kernel_stack(&self) {
-        let frame_address = self
-            .process_inner
-            .as_ref()
-            .unwrap_or_else(|| panic!("not a process"))
-            .trap_frame
-            .get();
-        let kernel_base = self.get_kernel_stack_top().unwrap() - core::mem::size_of::<TrapFrame>();
-
-        let trap_frame = kernel_base.as_usize() as *mut TrapFrame;
-
-        unsafe {
-            *trap_frame = *frame_address;
-        }
-    }
 }
 
 impl TaskInner {
@@ -470,11 +442,13 @@ impl TaskInner {
     where
         F: FnOnce() + Send + 'static,
     {
-        let mut t = Self::new_common(TaskId::new(), name, TaskType::Vcpu);
+        let mut t = Self::new_common(TaskId::new(), name);
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
-        t.entry = Some(Box::into_raw(Box::new(entry)));
-        t.ctx.get_mut().init(vcpu_entry as usize, kstack.top());
+        t.task_type = TaskType::Vcpu;
+        t.ctx
+            .get_mut()
+            .init(task_entry as usize, kstack.top(), PhysAddr::from(0));
         t.kstack = Some(kstack);
         if t.name == "idle" {
             t.is_idle = true;
@@ -591,41 +565,22 @@ extern "C" fn task_entry() -> ! {
     #[cfg(feature = "irq")]
     axhal::arch::enable_irqs();
     let task = crate::current();
-    if let Some(entry) = task.entry {
-        unsafe { Box::from_raw(entry)() };
+
+    debug!("task_entry {:?}", task.task_type);
+
+    match &task.task_type {
+        TaskType::Task { entry } => {
+            if let Some(entry) = entry {
+                unsafe { Box::from_raw(*entry)() };
+            }
+            crate::exit(0)
+        }
+        TaskType::Process { trap_frame } => {
+            let kernel_sp = task.get_kernel_stack_top().unwrap();
+            unsafe { trap_frame.exec(kernel_sp) }
+        }
+        TaskType::Vcpu => {
+            unimplemented!("Enter Vcpu")
+        }
     }
-    crate::exit(0);
-}
-
-extern "C" fn process_entry() -> ! {
-    // release the lock that was implicitly held across the reschedule
-    unsafe { crate::RUN_QUEUE.force_unlock() };
-
-    debug!("process_entry ()");
-
-    #[cfg(feature = "irq")]
-    axhal::arch::enable_irqs();
-    let task = crate::current();
-
-    let kernel_sp = task.get_kernel_stack_top().unwrap();
-    let trap_frame = unsafe { *task.get_first_trap_frame() };
-    // 切换页表已经在switch实现了
-	unsafe {
-		trap_frame.exec(kernel_sp)
-	}
-}
-
-extern "C" fn vcpu_entry() -> ! {
-    // release the lock that was implicitly held across the reschedule
-    unsafe { crate::RUN_QUEUE.force_unlock() };
-
-    debug!("vcpu_entry ()");
-
-    #[cfg(feature = "irq")]
-    axhal::arch::enable_irqs();
-    let task = crate::current();
-    if let Some(entry) = task.entry {
-        unsafe { Box::from_raw(entry)() };
-    }
-    crate::exit(0);
 }
