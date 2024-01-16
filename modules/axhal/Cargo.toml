@@ -36,7 +36,6 @@ static_assertions = "1.1.0"
 axlog = { path = "../axlog" }
 axconfig = { path = "../axconfig" }
 axalloc = { path = "../axalloc", optional = true }
-axsyscall = { path = "../axsyscall", optional = true}
 kernel_guard = { path = "../../crates/kernel_guard" }
 spinlock = { path = "../../crates/spinlock" }
 ratio = { path = "../../crates/ratio", optional = true }

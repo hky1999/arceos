@@ -66,6 +66,14 @@ members = [
     "modules/axmem",
     "modules/axfs",
     "modules/axvm",
-	"modules/axsyscall",
-    "ulib/libax", 
+    "ulib/libax",
+
+    "ulib/axsyscalls/syscall_entry",
+	"ulib/axsyscalls/syscall_utils",
+
+	# "ulib/axstarry/syscall_mem",
+    # "ulib/axstarry/syscall_fs",
+    # "ulib/axstarry/syscall_net",
+    # "ulib/axstarry/syscall_utils",
+    
 ]

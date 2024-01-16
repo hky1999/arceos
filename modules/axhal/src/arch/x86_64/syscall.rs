@@ -5,7 +5,6 @@ use x86_64::registers::model_specific::{Efer, EferFlags, KernelGsBase, LStar, SF
 use x86_64::registers::rflags::RFlags;
 
 use crate::arch::{GdtStruct, TrapFrame};
-use crate::platform::kernel_stack_top;
 // use crate::syscall::syscall;
 
 #[percpu::def_percpu]
@@ -27,9 +26,10 @@ pub(crate) unsafe fn set_kernel_stack(kstack_top: usize) {
 
 #[no_mangle]
 fn x86_syscall_handler(tf: &mut TrapFrame) {
+    let syscall_id = tf.rax;
     debug!(
         "x86_syscall_handler ID [{}] rdi {:#x} rsi {:#x} rdx {:#x}\n",
-        tf.rax, tf.rdi, tf.rsi, tf.rdx
+        syscall_id, tf.rdi, tf.rsi, tf.rdx
     );
     trace!("{:?}", tf);
     match tf.rax {
@@ -41,6 +41,10 @@ fn x86_syscall_handler(tf: &mut TrapFrame) {
             tf.rax = 0;
         }
     }
+    tf.rax = crate::trap::handle_syscall(
+        syscall_id as usize,
+        [tf.rdi as _, tf.rsi as _, tf.rdx as _, 0, 0, 0],
+    ) as u64;
     // tf.rax = syscall(tf, tf.rax as _, tf.rdi as _, tf.rsi as _, tf.rdx as _) as u64;
 }
 

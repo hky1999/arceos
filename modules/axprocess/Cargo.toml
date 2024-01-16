@@ -9,8 +9,6 @@ edition = "2021"
 
 fs = ["axfs"]
 
-# signal = ["axhal/signal", "axsignal/signal", "axtask/signal"]
-
 monolithic = ["fs", "axfs/monolithic"]
 
 # Futex support
