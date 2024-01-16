@@ -13,6 +13,10 @@ static TSS: LazyInit<TaskStateSegment> = LazyInit::new();
 #[percpu::def_percpu]
 static GDT: LazyInit<GdtStruct> = LazyInit::new();
 
+
+#[allow(dead_code)]
+pub const TSS_KERNEL_RSP_OFFSET: usize = offset_of!(TaskStateSegment, privilege_stack_table);
+
 fn init_percpu() {
     unsafe {
         IDT.load();
@@ -39,9 +43,6 @@ pub(super) fn init_secondary() {
     init_percpu();
 }
 
-#[allow(dead_code)]
-pub const TSS_KERNEL_RSP_OFFSET: usize = offset_of!(TaskStateSegment, privilege_stack_table);
-
 pub fn kernel_stack_top() -> VirtAddr {
     unsafe {
         let tss = TSS.current_ref_mut_raw();
@@ -54,5 +55,7 @@ pub fn set_kernel_stack_top(kstack_top: VirtAddr) {
     unsafe {
         let tss = TSS.current_ref_mut_raw();
         tss.privilege_stack_table[0] = x86_64::VirtAddr::new(kstack_top.as_usize() as u64);
+
+		crate::arch::syscall::set_kernel_stack(kstack_top.as_usize())
     }
 }

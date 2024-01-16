@@ -14,7 +14,7 @@ fn x86_trap_handler(tf: &mut TrapFrame) {
     match tf.vector as u8 {
         PAGE_FAULT_VECTOR => {
             if tf.is_user() {
-                warn!(
+                panic!(
                     "User #PF @ {:#x}, fault_vaddr={:#x}, error_code={:#x}",
                     tf.rip,
                     unsafe { cr2() },

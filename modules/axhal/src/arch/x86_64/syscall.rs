@@ -4,23 +4,34 @@ use x86_64::addr::VirtAddr;
 use x86_64::registers::model_specific::{Efer, EferFlags, KernelGsBase, LStar, SFMask, Star};
 use x86_64::registers::rflags::RFlags;
 
-use super::context::TrapFrame;
-use super::gdt::GdtStruct;
-use crate::platform::TSS_KERNEL_RSP_OFFSET;
+use crate::arch::{GdtStruct, TrapFrame};
+use crate::platform::kernel_stack_top;
 // use crate::syscall::syscall;
 
 #[percpu::def_percpu]
 static PERCPU_USER_RSP: usize = 0;
 
+#[percpu::def_percpu]
+static PERCPU_KERNEL_RSP: usize = 0;
+
 global_asm!(
     include_str!("syscall.S"),
     saved_user_rsp = sym __PERCPU_PERCPU_USER_RSP,
-    saved_kernel_rsp_offset = const 0,
+    saved_kernel_rsp = sym __PERCPU_PERCPU_KERNEL_RSP,
 );
 
 #[no_mangle]
+pub(crate) unsafe fn set_kernel_stack(kstack_top: usize) {
+    PERCPU_KERNEL_RSP.write_current_raw(kstack_top)
+}
+
+#[no_mangle]
 fn x86_syscall_handler(tf: &mut TrapFrame) {
-	debug!("x86_syscall_handler {:?}", tf);
+    debug!(
+        "x86_syscall_handler ID [{}] rdi {:#x} rsi {:#x} rdx {:#x}\n",
+        tf.rax, tf.rdi, tf.rsi, tf.rdx
+    );
+    trace!("{:?}", tf);
     // tf.rax = syscall(tf, tf.rax as _, tf.rdi as _, tf.rsi as _, tf.rdx as _) as u64;
     tf.rax = 0;
 }

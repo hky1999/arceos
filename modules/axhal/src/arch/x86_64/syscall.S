@@ -2,7 +2,7 @@
 syscall_entry:
     swapgs
     mov     gs:{saved_user_rsp}, rsp
-    mov     rsp, gs:{saved_kernel_rsp_offset}
+    mov     rsp, gs:{saved_kernel_rsp}
 
     sub     rsp, 8                      // skip user_ss
     push    gs:{saved_user_rsp}  // user_rsp
