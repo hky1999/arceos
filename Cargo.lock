@@ -348,6 +348,7 @@ dependencies = [
  "kernel_guard",
  "lazy_init",
  "log",
+ "memoffset",
  "memory_addr",
  "page_table",
  "page_table_entry",

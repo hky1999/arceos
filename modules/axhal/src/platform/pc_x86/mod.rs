@@ -3,7 +3,7 @@ mod boot;
 mod dtables;
 mod uart16550;
 
-pub use dtables::{kernel_stack_top, set_kernel_stack_top};
+pub use dtables::{kernel_stack_top, set_kernel_stack_top, TSS_KERNEL_RSP_OFFSET};
 
 pub mod mem;
 pub mod misc;

@@ -5,6 +5,9 @@ mod idt;
 #[cfg(target_os = "none")]
 mod trap;
 
+#[cfg(feature = "monolithic")]
+pub mod syscall;
+
 use core::arch::asm;
 
 use memory_addr::{PhysAddr, VirtAddr};

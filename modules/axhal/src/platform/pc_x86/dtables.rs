@@ -1,7 +1,9 @@
 //! Description tables (per-CPU GDT, per-CPU ISS, IDT)
-use crate::mem::VirtAddr;
 use crate::arch::{GdtStruct, IdtStruct, TaskStateSegment};
+use crate::mem::VirtAddr;
 use lazy_init::LazyInit;
+
+use memoffset::offset_of;
 
 static IDT: LazyInit<IdtStruct> = LazyInit::new();
 
@@ -20,6 +22,7 @@ fn init_percpu() {
         gdt.init_by(GdtStruct::new(tss));
         gdt.load();
         gdt.load_tss();
+        crate::arch::syscall::init_percpu();
     }
 }
 
@@ -36,18 +39,20 @@ pub(super) fn init_secondary() {
     init_percpu();
 }
 
+#[allow(dead_code)]
+pub const TSS_KERNEL_RSP_OFFSET: usize = offset_of!(TaskStateSegment, privilege_stack_table);
+
 pub fn kernel_stack_top() -> VirtAddr {
-	unsafe {
-		let tss = TSS.current_ref_mut_raw();
-		VirtAddr::from(tss.privilege_stack_table[0].as_u64() as usize)
-	}
-	
+    unsafe {
+        let tss = TSS.current_ref_mut_raw();
+        VirtAddr::from(tss.privilege_stack_table[0].as_u64() as usize)
+    }
 }
 
 pub fn set_kernel_stack_top(kstack_top: VirtAddr) {
-	trace!("set percpu kernel stack: {:#x?}", kstack_top);
-	unsafe {
-		let tss = TSS.current_ref_mut_raw();
-		tss.privilege_stack_table[0] = x86_64::VirtAddr::new(kstack_top.as_usize() as u64);
-	}
+    trace!("set percpu kernel stack: {:#x?}", kstack_top);
+    unsafe {
+        let tss = TSS.current_ref_mut_raw();
+        tss.privilege_stack_table[0] = x86_64::VirtAddr::new(kstack_top.as_usize() as u64);
+    }
 }
