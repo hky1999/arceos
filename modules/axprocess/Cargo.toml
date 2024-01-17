@@ -18,6 +18,7 @@ default = []
 
 [dependencies]
 cfg-if = "1.0"
+syscalls = { version = "0.6", default-features = false }
 spinlock = { path = "../../crates/spinlock" }
 axtask = { path = "../axtask" }
 axsync = { path = "../axsync" }

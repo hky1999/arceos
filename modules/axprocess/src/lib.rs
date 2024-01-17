@@ -11,5 +11,7 @@ pub mod loader;
 mod stdio;
 
 mod fd_manager;
+
+mod syscall;
 // #[cfg(feature = "signal")]
 // pub mod signal;
