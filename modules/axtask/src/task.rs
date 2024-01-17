@@ -49,8 +49,10 @@ pub struct VcpuInner {
 pub enum TaskType {
     /// ArceOS task.
     Task { entry: Option<*mut dyn FnOnce()> },
+    #[cfg(feature = "monolithic")]
     /// User process.
     Process { trap_frame: Box<TrapFrame> },
+    #[cfg(feature = "hv")]
     /// Virtual CPU.
     Vcpu,
 }
@@ -84,7 +86,9 @@ pub struct TaskInner {
     /// On Vcpu, this field stores the kernel context of root-mode.
     ctx: UnsafeCell<TaskContext>,
 
+    #[cfg(feature = "monolithic")]
     process_inner: Option<ProcessInner>,
+    #[cfg(feature = "hv")]
     vcpu_inner: Option<Box<VcpuInner>>,
 }
 
@@ -172,7 +176,9 @@ impl TaskInner {
             wait_for_exit: WaitQueue::new(),
             kstack: None,
             ctx: UnsafeCell::new(TaskContext::new()),
+            #[cfg(feature = "monolithic")]
             process_inner: None,
+            #[cfg(feature = "hv")]
             vcpu_inner: None,
         }
     }
@@ -315,6 +321,7 @@ impl TaskInner {
     }
 }
 
+#[cfg(feature = "monolithic")]
 impl TaskInner {
     pub fn new_process(
         name: String,
@@ -400,16 +407,7 @@ impl TaskInner {
             .process_id
             .store(process_id, Ordering::Release);
     }
-
-    /// 获取内核栈的第一个trap上下文
-    #[inline]
-    pub fn get_first_trap_frame(&self) -> *mut TrapFrame {
-        if let Some(kstack) = &self.kstack {
-            return kstack.get_first_trap_frame();
-        }
-        unreachable!("get_first_trap_frame: kstack is None");
-    }
-
+    
     pub fn set_leader(&self, is_lead: bool) {
         self.process_inner
             .as_ref()
@@ -427,6 +425,7 @@ impl TaskInner {
     }
 }
 
+#[cfg(feature = "hv")]
 impl TaskInner {
     pub fn new_vcpu(
         name: String,
@@ -445,6 +444,7 @@ impl TaskInner {
         if t.name == "idle" {
             t.is_idle = true;
         }
+        t.vcpu_inner = None;
         Arc::new(AxTask::new(t))
     }
 }
@@ -481,12 +481,6 @@ impl TaskStack {
 
     pub const fn top(&self) -> VirtAddr {
         unsafe { core::mem::transmute(self.ptr.as_ptr().add(self.layout.size())) }
-    }
-
-    #[cfg(feature = "monolithic")]
-    /// 获取内核栈第一个压入的trap上下文，防止出现内核trap嵌套
-    pub fn get_first_trap_frame(&self) -> *mut TrapFrame {
-        (self.top().as_usize() - core::mem::size_of::<TrapFrame>()) as *mut TrapFrame
     }
 }
 

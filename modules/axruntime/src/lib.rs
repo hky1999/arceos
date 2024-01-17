@@ -56,9 +56,6 @@ d88P     888 888      "Y8888P  "Y8888   "Y88888P"   "Y8888P"
 "#;
 
 extern "C" {
-    #[cfg(feature = "hv")]
-    fn main(cpu_id: usize);
-    #[cfg(not(feature = "hv"))]
     fn main();
 }
 

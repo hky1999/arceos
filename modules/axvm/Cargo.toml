@@ -6,3 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+axhal = { path = "../axhal" }
+axlog = { path = "../axlog" }
+axruntime = { path = "../axruntime", default-features = false }
+axalloc = { path = "../axalloc"}
+
+hypercraft = {path = "../../crates/hypercraft"}
+page_table_entry = { path = "../../crates/page_table_entry", features = ["hv"]}

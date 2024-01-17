@@ -419,6 +419,7 @@ impl Process {
     /// 返回值为新产生的任务的id
     pub fn clone_task(
         &self,
+        tf: &TrapFrame,
         flags: CloneFlags,
         stack: Option<usize>,
         ptid: usize,
@@ -456,7 +457,7 @@ impl Process {
             self.pid
         };
 
-        let old_trap_frame = unsafe { *(current().get_first_trap_frame()) }.clone();
+        let old_trap_frame = tf.clone();
 
         // 复制原有的trap上下文
         let trap_frame = {

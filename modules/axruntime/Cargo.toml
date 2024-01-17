@@ -23,7 +23,7 @@ display = ["alloc", "paging", "axdriver/virtio-gpu", "dep:axdisplay"]
 default = ["axtask?/default"]
 
 monolithic = ["axprocess/monolithic", "axhal/monolithic", "axtask/monolithic", "axmem/monolithic"]
-hv = ["alloc", "dep:hypercraft", "axhal/hv", "dep:page_table", "dep:page_table_entry"]
+hv = ["alloc", "dep:hypercraft", "axhal/hv", "axtask/hv", "dep:page_table"]
 
 [dependencies]
 spin = "0.9"
@@ -50,7 +50,6 @@ axmem = { path = "../axmem", optional = true }
 
 hypercraft = { path = "../../crates/hypercraft", optional = true }
 page_table = { path = "../../crates/page_table", optional = true }
-page_table_entry = { path = "../../crates/page_table_entry", features = ["hv"], optional = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.52"
