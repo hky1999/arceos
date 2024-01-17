@@ -16,12 +16,17 @@ use page_table_entry::MappingFlags;
 pub trait TrapHandler {
     /// Handles interrupt requests for the given IRQ number.
     fn handle_irq(irq_num: usize);
-    // 需要分离用户态使用
-    #[cfg(feature = "monolithic")]
-    fn handle_syscall(syscall_id: usize, args: [usize; 6]) -> isize;
     // more e.g.: handle_page_fault();
+	/// Handle page fault from `axprocess`. Todo: redefine feature.
     #[cfg(feature = "monolithic")]
     fn handle_page_fault(addr: VirtAddr, flags: MappingFlags, tf: &mut TrapFrame);
+}
+
+#[def_interface]
+pub trait SyscallHandler {
+	/// Handle syscall from user process.
+    #[cfg(feature = "monolithic")]
+    fn handle_syscall(syscall_id: usize, args: [usize; 6]) -> isize;
 }
 
 /// Call the external IRQ handler.
@@ -35,7 +40,7 @@ pub(crate) fn handle_irq_extern(irq_num: usize) {
 /// 分割token流
 #[no_mangle]
 pub(crate) fn handle_syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    call_interface!(TrapHandler::handle_syscall, syscall_id, args)
+    call_interface!(SyscallHandler::handle_syscall, syscall_id, args)
 }
 
 #[allow(dead_code)]

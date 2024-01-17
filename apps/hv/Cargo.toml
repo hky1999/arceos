@@ -19,6 +19,7 @@ bitflags = "2.2"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 spin = "0.9"
 axprocess = { path = "../../modules/axprocess"}
+axsyscalls = { path = "../../ulib/axsyscalls" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.52"

@@ -201,7 +201,6 @@ impl Process {
         new_trap_frame.app_init_args();
 
         let new_task = TaskInner::new_process(
-            || {},
             path,
             axconfig::TASK_STACK_SIZE,
             new_process.pid(),
@@ -281,21 +280,20 @@ impl Process {
                 })),
             ],
         ));
-		let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
+        let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
         new_trap_frame.app_init_args();
         let new_task = TaskInner::new_process(
-            || {},
             String::from("hello"),
             axconfig::TASK_STACK_SIZE,
             new_process.pid(),
             page_table_token,
-			new_trap_frame
+            new_trap_frame,
         );
         TID2TASK
             .lock()
             .insert(new_task.id().as_u64(), Arc::clone(&new_task));
         new_task.set_leader(true);
-        
+
         new_process.tasks.lock().push(Arc::clone(&new_task));
         #[cfg(feature = "signal")]
         new_process
@@ -327,7 +325,13 @@ impl Process {
     /// 将当前进程替换为指定的用户程序
     /// args为传入的参数
     /// 任务的统计时间会被重置
-    pub fn exec(&self, name: String, args: Vec<String>, envs: Vec<String>, tf: &mut TrapFrame) -> AxResult<()> {
+    pub fn exec(
+        &self,
+        name: String,
+        args: Vec<String>,
+        envs: Vec<String>,
+        tf: &mut TrapFrame,
+    ) -> AxResult<()> {
         // 首先要处理原先进程的资源
         // 处理分配的页帧
         // 之后加入额外的东西之后再处理其他的包括信号等因素
@@ -406,8 +410,8 @@ impl Process {
         // user_stack_top = user_stack_top / PAGE_SIZE_4K * PAGE_SIZE_4K;
         let mut new_trap_frame = TrapFrame::new_user(entry, user_stack_bottom, 0);
         new_trap_frame.app_init_args();
-        
-		*tf = new_trap_frame;
+
+        *tf = new_trap_frame;
         Ok(())
     }
 
@@ -452,7 +456,7 @@ impl Process {
             self.pid
         };
 
-		let old_trap_frame = unsafe { *(current().get_first_trap_frame()) }.clone();
+        let old_trap_frame = unsafe { *(current().get_first_trap_frame()) }.clone();
 
         // 复制原有的trap上下文
         let trap_frame = {
@@ -468,12 +472,11 @@ impl Process {
         };
 
         let new_task = TaskInner::new_process(
-            || {},
             String::new(),
             axconfig::TASK_STACK_SIZE,
             process_id,
             new_memory_set.lock().page_table_token(),
-			trap_frame
+            trap_frame,
         );
         debug!("new task:{}", new_task.id().as_u64());
         TID2TASK

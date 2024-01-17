@@ -109,6 +109,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "axprocess",
+ "axsyscalls",
  "bit_field",
  "bitflags 2.4.1",
  "fdt",
@@ -480,6 +481,28 @@ version = "0.1.0"
 dependencies = [
  "axtask",
  "rand",
+ "spinlock",
+]
+
+[[package]]
+name = "axsyscalls"
+version = "0.1.0"
+dependencies = [
+ "axalloc",
+ "axconfig",
+ "axerrno",
+ "axfs",
+ "axhal",
+ "axlog",
+ "axprocess",
+ "axruntime",
+ "axtask",
+ "bitflags 2.4.1",
+ "crate_interface 0.1.1",
+ "kernel_guard",
+ "lazy_init",
+ "num_enum",
+ "numeric-enum-macro 0.2.0 (git+https://github.com/mexus/numeric-enum-macro)",
  "spinlock",
 ]
 
@@ -1362,41 +1385,10 @@ name = "linked_list"
 version = "0.1.0"
 
 [[package]]
-name = "linux-errnos"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82d9999959fd7a0dce57905269e4b54fc222fb9e2dd09b947fc9128b4d27b8b6"
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4cd1a83af159aa67994778be9070f0ae1bd732942279cabb14f86f986a21456"
-
-[[package]]
-name = "linux-raw-vdso"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "125164ff371966a3153fd1b9419d6dd3570f1824185403a42e71f2dc3b8b5db3"
-
-[[package]]
-name = "linux-syscalls"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a33f5d4132e165f23d7967bd212145d230cff847abfd090c98275f2a57746b3f"
-dependencies = [
- "cc",
- "linux-errnos",
- "linux-raw-vdso",
- "linux-sysno",
- "rustc_version 0.4.0",
-]
-
-[[package]]
-name = "linux-sysno"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3720037f1659e9069351c11bced3c77acaf32e96141e3c453207558e04749cf7"
 
 [[package]]
 name = "lock_api"
@@ -2098,38 +2090,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "syscall_entry"
-version = "0.1.0"
-dependencies = [
- "axalloc",
- "axhal",
- "axlog",
- "axprocess",
- "axruntime",
- "axtask",
- "crate_interface 0.1.1",
- "kernel_guard",
- "lazy_init",
- "linux-syscalls",
- "spinlock",
- "syscall_utils",
-]
-
-[[package]]
-name = "syscall_utils"
-version = "0.1.0"
-dependencies = [
- "axconfig",
- "axerrno",
- "axfs",
- "axhal",
- "axlog",
- "bitflags 2.4.1",
- "num_enum",
- "numeric-enum-macro 0.2.0 (git+https://github.com/mexus/numeric-enum-macro)",
 ]
 
 [[package]]

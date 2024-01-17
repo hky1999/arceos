@@ -1,9 +1,8 @@
 [package]
-name = "syscall_entry"
+name = "axsyscalls"
 version = "0.1.0"
 edition = "2021"
 
-authors = ["Youjie Zheng <zyj578335934@gmail.com>"]
 description = "ArceOS user program library for linux apps with posix_syscall"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -41,19 +40,24 @@ multitask = ["axruntime/multitask"]
 # syscall_task = ["dep:syscall_task"]
 
 [dependencies]
-linux-syscalls = "0.3.2"
+# linux-syscalls = "0.3.2"
+# log = "0.4"
 
-axlog = { path = "../../../modules/axlog" }
-axruntime = { path = "../../../modules/axruntime" }
-axhal = { path = "../../../modules/axhal" }
-axtask = { path = "../../../modules/axtask"}
-axprocess = { path = "../../../modules/axprocess" }
-axalloc = { path = "../../../modules/axalloc", optional = true }
+axlog = { path = "../../modules/axlog" }
+axruntime = { path = "../../modules/axruntime" }
+axhal = { path = "../../modules/axhal" }
+axtask = { path = "../../modules/axtask"}
+axprocess = { path = "../../modules/axprocess" }
+axalloc = { path = "../../modules/axalloc", optional = true }
 
+crate_interface = { path = "../../crates/crate_interface" }
+lazy_init = { path = "../../crates/lazy_init" }
+spinlock = { path = "../../crates/spinlock" }
+kernel_guard = { path = "../../crates/kernel_guard" }
 
-syscall_utils = { path = "../syscall_utils" }
-
-crate_interface = { path = "../../../crates/crate_interface" }
-lazy_init = { path = "../../../crates/lazy_init" }
-spinlock = { path = "../../../crates/spinlock" }
-kernel_guard = { path = "../../../crates/kernel_guard" }
+num_enum = { version = "0.5.11", default-features = false }
+bitflags = "2.0"
+axfs = { path = "../../modules/axfs" }
+axconfig = { path = "../../modules/axconfig" }
+axerrno = { path = "../../crates/axerrno" }
+numeric-enum-macro = { git = "https://github.com/mexus/numeric-enum-macro" }

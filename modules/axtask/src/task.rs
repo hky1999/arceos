@@ -188,8 +188,10 @@ impl TaskInner {
             entry: Some(Box::into_raw(Box::new(entry))),
         };
         // t.entry = Some(Box::into_raw(Box::new(entry)));
-		// Todo: pass the correct page table root.
-        t.ctx.get_mut().init(task_entry as usize, kstack.top(), PhysAddr::from(0));
+        // Todo: pass the correct page table root.
+        t.ctx
+            .get_mut()
+            .init(task_entry as usize, kstack.top(), PhysAddr::from(0));
         t.kstack = Some(kstack);
         if t.name == "idle" {
             t.is_idle = true;
@@ -314,17 +316,13 @@ impl TaskInner {
 }
 
 impl TaskInner {
-    pub fn new_process<F>(
-        entry: F,
+    pub fn new_process(
         name: String,
         stack_size: usize,
         process_id: u64,
         page_table_token: usize,
         trap_frame: TrapFrame,
-    ) -> AxTaskRef
-    where
-        F: FnOnce() + Send + 'static,
-    {
+    ) -> AxTaskRef {
         let mut t = Self::new_common(TaskId::new(), name);
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
@@ -332,11 +330,9 @@ impl TaskInner {
         t.task_type = TaskType::Process {
             trap_frame: Box::new(trap_frame),
         };
-        t.ctx.get_mut().init(
-            task_entry as usize,
-            kstack.top(),
-			page_table_token.into()
-        );
+        t.ctx
+            .get_mut()
+            .init(task_entry as usize, kstack.top(), page_table_token.into());
 
         t.kstack = Some(kstack);
         if t.name == "idle" {
@@ -432,16 +428,12 @@ impl TaskInner {
 }
 
 impl TaskInner {
-    pub fn new_vcpu<F>(
-        entry: F,
+    pub fn new_vcpu(
         name: String,
         stack_size: usize,
         _vcpu_id: u64,
         _page_table_token: usize,
-    ) -> AxTaskRef
-    where
-        F: FnOnce() + Send + 'static,
-    {
+    ) -> AxTaskRef {
         let mut t = Self::new_common(TaskId::new(), name);
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
