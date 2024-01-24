@@ -5,10 +5,8 @@
 use axlog::info;
 
 use axhal::mem::{phys_to_virt, virt_to_phys, PhysAddr};
-use axruntime::GuestPageTable;
-use axruntime::HyperCraftHalImpl;
-use hypercraft::GuestPageTableTrait;
 
+use hypercraft::GuestPageTableTrait;
 use hypercraft::HyperError as Error;
 use hypercraft::HyperResult as Result;
 use hypercraft::HyperCraftHal;
@@ -19,7 +17,10 @@ use hypercraft::{HyperCallMsg, VmExitInfo, GuestPhysAddr, GuestVirtAddr, HostPhy
 use hypercraft::{PerCpuDevices, PerVmDevices, VmxExitReason};
 
 #[cfg(target_arch = "x86_64")]
-use super::device::{X64VcpuDevices, X64VmDevices};
+use super::device::{self, X64VcpuDevices, X64VmDevices};
+
+use super::page_table::GuestPageTable;
+use super::hal::HyperCraftHalImpl;
 
 pub fn linux(hart_id: usize) {
     
@@ -28,7 +29,7 @@ pub fn linux(hart_id: usize) {
     let mut p = PerCpu::<HyperCraftHalImpl>::new(hart_id);
     p.hardware_enable().unwrap();
 
-    let gpm = super::mm::mapper::setup_gpm(hart_id).unwrap();
+    let gpm = super::config::setup_gpm(hart_id).unwrap();
     let npt = gpm.nest_page_table_root();
     info!("{:#x?}", gpm);
 
@@ -47,7 +48,7 @@ pub fn linux(hart_id: usize) {
         *(dev.console.lock().backend()) = device::device_emu::MultiplexConsoleBackend::Primary;
 
         for v in 0..256 {
-            libax::hv::set_host_irq_enabled(v, true);
+            crate::set_host_irq_enabled(v, true);
         }
     }
 
