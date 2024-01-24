@@ -173,7 +173,7 @@ impl PITChannel {
         }
     }
 
-    fn set_enabled(&self, enabled: bool) {
+    fn set_enabled(&self, _enabled: bool) {
     }
 }
 
@@ -206,7 +206,7 @@ impl PIT {
         if channel >= PIT_CHANNEL_COUNT {
             Err(HyperError::InvalidParam)
         } else {
-            self.channels[channel].read().or_else(|err| {
+            self.channels[channel].read().or_else(|_err| {
                 // warn!("PIT read (channel: {channel}) error: {err:?}, skipped");
                 Ok(0)
             })
@@ -218,7 +218,7 @@ impl PIT {
         if channel >= PIT_CHANNEL_COUNT {
             Err(HyperError::InvalidParam)
         } else {
-            self.channels[channel].write(value).or_else(|err| {
+            self.channels[channel].write(value).or_else(|_err| {
                 // warn!("PIT write (channel: {channel}, value: {value}) error: {err:?}, skipped");
                 Ok(())
             })

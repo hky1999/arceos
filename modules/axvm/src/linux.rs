@@ -23,14 +23,14 @@ pub fn linux(hart_id: usize) {
     info!("{:#x?}", gpm);
 
     let mut vcpus = VmCpus::<HyperCraftHalImpl, X64VcpuDevices<HyperCraftHalImpl>>::new();
-    vcpus.add_vcpu(VCpu::new(0, p.vmcs_revision_id(), 0x7c00, npt).unwrap());
+    vcpus.add_vcpu(VCpu::new(0, p.vmcs_revision_id(), 0x7c00, npt).unwrap()).expect("add vcpu failed");
 
     let mut vm = VM::<
         HyperCraftHalImpl,
         X64VcpuDevices<HyperCraftHalImpl>,
         X64VmDevices<HyperCraftHalImpl>,
     >::new(vcpus);
-    vm.bind_vcpu(0);
+    vm.bind_vcpu(0).expect("bind vcpu failed");
 
     if hart_id == 0 {
         let (_, dev) = vm.get_vcpu_and_device(0).unwrap();

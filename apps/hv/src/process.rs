@@ -6,9 +6,8 @@ pub fn hello() {
 
     println!("New hello process id {}", now_process_id);
 
-	// let mut ans = None;
 
-    let mut exit_code = 0;
+    let  _exit_code = 0;
     loop {
         // if unsafe { axprocess::wait_pid(now_process_id, &mut exit_code as *mut i32) }.is_ok() {
         //     break Some(exit_code);

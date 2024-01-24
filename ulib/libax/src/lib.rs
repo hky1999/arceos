@@ -43,7 +43,6 @@
 #![feature(doc_auto_cfg)]
 #![feature(int_roundings)]
 #![feature(naked_functions)]
-#![feature(result_option_inspect)]
 
 #[allow(unused_imports)]
 #[macro_use]

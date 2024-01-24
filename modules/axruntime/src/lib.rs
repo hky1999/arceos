@@ -211,12 +211,6 @@ pub extern "C" fn rust_main(cpu_id: usize, dtb: usize) -> ! {
         core::hint::spin_loop();
     }
 
-    #[cfg(feature = "hv")]
-    unsafe {
-        main()
-    };
-
-    #[cfg(not(feature = "hv"))]
     unsafe {
         main()
     };

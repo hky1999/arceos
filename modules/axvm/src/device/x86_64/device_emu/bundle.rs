@@ -55,15 +55,15 @@ impl Bundle {
         }
     }
 
-    fn read_system_control_a(&mut self, port: u16, access_size: u8) -> HyperResult<u32> {
+    fn read_system_control_a(&mut self, _port: u16, _access_size: u8) -> HyperResult<u32> {
         Ok(0)
     }
 
-    fn write_system_control_a(&mut self, port: u16, access_size: u8, value: u32) -> HyperResult {
+    fn write_system_control_a(&mut self, _port: u16, _access_size: u8, _value: u32) -> HyperResult {
         Err(HyperError::NotSupported)
     }
 
-    fn read_system_control_b(&mut self, port: u16, access_size: u8) -> HyperResult<u32> {
+    fn read_system_control_b(&mut self, _port: u16, _access_size: u8) -> HyperResult<u32> {
         let mut result = self.scp_b_writable;
 
         if self.pit.read_output(1)? {
@@ -77,7 +77,7 @@ impl Bundle {
         Ok(result.bits() as u32)
     }
 
-    fn write_system_control_b(&mut self, port: u16, access_size: u8, value: u32) -> HyperResult {
+    fn write_system_control_b(&mut self, _port: u16, _access_size: u8, value: u32) -> HyperResult {
         let value = SystemControlPortB::from_bits_truncate(value as u8) & !SystemControlPortB::READONLY_MASK;
 
         self.pit.set_enabled(2, value.contains(SystemControlPortB::TIMER2_ENABLED))?;
@@ -86,7 +86,7 @@ impl Bundle {
         Ok(())
     }
 
-    fn read_cmos(&mut self, port: u16, access_size: u8) -> HyperResult<u32> {
+    fn read_cmos(&mut self, port: u16, _access_size: u8) -> HyperResult<u32> {
         if port == PORT_CMOS_ADDRESS {
             Err(HyperError::NotSupported)
         } else {
@@ -101,7 +101,7 @@ impl Bundle {
         }
     }
 
-    fn write_cmos(&mut self, port: u16, access_size: u8, value: u32) -> HyperResult {
+    fn write_cmos(&mut self, port: u16, _access_size: u8, value: u32) -> HyperResult {
         if port == PORT_CMOS_ADDRESS {
             self.cmos_selected_reg = Some((value & 0x7f) as u8);
             self.nmi_enabled = (value & 0x80) == 0;
@@ -119,7 +119,7 @@ impl Bundle {
         }
     }
 
-    fn read_pit(&mut self, port: u16, access_size: u8) -> HyperResult<u32> {
+    fn read_pit(&mut self, port: u16, _access_size: u8) -> HyperResult<u32> {
         // debug!("pit read, port {port:#x}");
 
         if port == PORT_PIT_COMMAND {
@@ -129,7 +129,7 @@ impl Bundle {
         }
     }
 
-    fn write_pit(&mut self, port: u16, access_size: u8, value: u32) -> HyperResult {
+    fn write_pit(&mut self, port: u16, _access_size: u8, value: u32) -> HyperResult {
         let value = value as u8;
 
         // debug!("pit write, port {port:#x}, value {value:#x}");

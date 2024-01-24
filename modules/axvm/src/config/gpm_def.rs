@@ -1,9 +1,7 @@
 use super::{BIOS_ENTRY, BIOS_PADDR, BIOS_SIZE, GUEST_PHYS_MEMORY_BASE, GUEST_PHYS_MEMORY_SIZE};
 use crate::mm::{GuestMemoryRegion, GuestPhysMemorySet};
 use crate::{phys_to_virt, virt_to_phys, Result as HyperResult};
-use hypercraft::{
-    GuestPageTableTrait, GuestPhysAddr, HostPhysAddr, HostVirtAddr,
-};
+use hypercraft::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 
 use page_table_entry::MappingFlags;
 

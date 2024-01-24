@@ -18,11 +18,11 @@ impl PortIoDevice for Dummy {
         self.port_base..self.port_base + self.port_count
     }
 
-    fn read(&mut self, port: u16, access_size: u8) -> HyperResult<u32> {
+    fn read(&mut self, _port: u16, _access_size: u8) -> HyperResult<u32> {
         Ok(0)
     }
 
-    fn write(&mut self, port: u16, access_size: u8, value: u32) -> HyperResult {
+    fn write(&mut self, _port: u16, _access_size: u8, _value: u32) -> HyperResult {
         Ok(())
     }
 }

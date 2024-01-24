@@ -169,11 +169,11 @@ pub struct X64VcpuDevices<H: HyperCraftHal> {
 }
 
 impl<H: HyperCraftHal> PerCpuDevices<H> for X64VcpuDevices<H> {
-    fn new(vcpu: &VCpu<H>) -> HyperResult<Self> {
-        let mut apic_timer = Arc::new(Mutex::new(VirtLocalApic::new()));
-        let mut bundle = Arc::new(Mutex::new(Bundle::new()));
-        let mut console = Arc::new(Mutex::new(device_emu::Uart16550::<device_emu::MultiplexConsoleBackend>::new(0x3f8)));
-        let mut pic: [Arc<Mutex<device_emu::I8259Pic>>; 2]  = [
+    fn new(_vcpu: &VCpu<H>) -> HyperResult<Self> {
+        let apic_timer = Arc::new(Mutex::new(VirtLocalApic::new()));
+        let bundle = Arc::new(Mutex::new(Bundle::new()));
+        let console = Arc::new(Mutex::new(device_emu::Uart16550::<device_emu::MultiplexConsoleBackend>::new(0x3f8)));
+        let pic: [Arc<Mutex<device_emu::I8259Pic>>; 2]  = [
             Arc::new(Mutex::new(device_emu::I8259Pic::new(0x20))),
             Arc::new(Mutex::new(device_emu::I8259Pic::new(0xA0))),
         ];
@@ -248,7 +248,7 @@ impl<H: HyperCraftHal> PerCpuDevices<H> for X64VcpuDevices<H> {
                 if now > 1_000_000 + last {
                     if !self.pic[0].lock().mask().get_bit(0) {
                         vcpu.queue_event(0x30, None);
-                        let mask = self.pic[0].lock().mask();
+                        let _mask = self.pic[0].lock().mask();
                         // debug!("0x30 queued, mask {mask:#x}");
                     }
                     self.last = Some(now);
@@ -298,7 +298,7 @@ impl<H: HyperCraftHal> PerVmDevices<H> for X64VmDevices<H> {
                         "VM exit: EPT violation @ {:#x}, fault_paddr={:#x}, access_flags=({:?}), vcpu: {:#x?}",
                         exit_info.guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags, vcpu
                     ),
-                    Err(err) => panic!(
+                    Err(_err) => panic!(
                         "VM exit: EPT violation with unknown fault info @ {:#x}, vcpu: {:#x?}",
                         exit_info.guest_rip, vcpu
                     ),

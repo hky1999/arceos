@@ -25,7 +25,7 @@ impl PortIoDevice for PCIConfigurationSpace {
 
     fn read(&mut self, port: u16, access_size: u8) -> HyperResult<u32> {
         match (port - self.port_base) as usize {
-            offset @ CONFIGURATION_SPACE_ADDRESS_PORT_OFFSET ..= CONFIGURATION_SPACE_ADDRESS_PORT_LAST_OFFSET => {
+            _offset @ CONFIGURATION_SPACE_ADDRESS_PORT_OFFSET ..= CONFIGURATION_SPACE_ADDRESS_PORT_LAST_OFFSET => {
                 // we return non-sense to tell linux pci is not present.
                 match access_size {
                     1 => Ok(0xfe),

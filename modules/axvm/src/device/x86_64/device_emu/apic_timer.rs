@@ -311,7 +311,7 @@ impl VirtMsrDevice for ApicBaseMsrHandler {
         Ok(apic_base)
     }
 
-    fn write(&mut self, msr: u32, value: u64) -> HyperResult {
+    fn write(&mut self, _msr: u32, _value: u64) -> HyperResult {
         Ok(())
     }
 }

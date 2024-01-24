@@ -566,6 +566,7 @@ extern "C" fn task_entry() -> ! {
             unsafe { trap_frame.exec(kernel_sp) }
         }
         TaskType::Vcpu => {
+            // vcpu::run
             unimplemented!("Enter Vcpu")
         }
     }

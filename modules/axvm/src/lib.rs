@@ -42,7 +42,7 @@ pub use hypercraft::{HyperCallMsg, VmExitInfo, GuestPhysAddr, GuestVirtAddr, Hos
 pub use hypercraft::{PerCpuDevices, PerVmDevices, VmxExitReason};
 
 #[cfg(target_arch = "x86_64")]
-pub fn dispatch_host_irq(vector: usize) -> Result {
+pub fn dispatch_host_irq(_vector: usize) -> Result {
     #[cfg(feature = "irq")] 
     {
         axhal::irq::dispatch_irq(vector);
