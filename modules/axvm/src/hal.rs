@@ -1,6 +1,6 @@
 use axalloc::global_allocator;
 use axhal::mem::{PAGE_SIZE_4K, phys_to_virt, virt_to_phys};
-use hypercraft::{HostPhysAddr, HostVirtAddr, HyperCraftHal, HyperResult, VCpu};
+use hypercraft::{HostPhysAddr, HostVirtAddr, HyperCraftHal};
 
 /// An empty struct to implementate of `HyperCraftHal`
 pub struct HyperCraftHalImpl;

@@ -9,7 +9,6 @@ use axfs::api::{FileIO, OpenFlags};
 use axhal::arch::{write_page_table_root, TrapFrame};
 use axhal::mem::{phys_to_virt, VirtAddr};
 use axhal::KERNEL_PROCESS_ID;
-use axlog::{debug, error};
 use axmem::MemorySet;
 use axsync::Mutex;
 use axtask::{current, AxTaskRef, TaskId, TaskInner, RUN_QUEUE};

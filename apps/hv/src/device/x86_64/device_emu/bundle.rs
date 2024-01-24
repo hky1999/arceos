@@ -4,7 +4,6 @@ extern crate alloc;
 use alloc::sync::Arc;
 use bit_field::BitField;
 use libax::hv::{Result as HyperResult, Error as HyperError};
-use spin::Mutex;
 use x86::task::tr;
 use super::{PortIoDevice, pit::PIT};
 use super::{pmio_proxy_factory, pmio_proxy_struct};

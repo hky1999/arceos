@@ -2,24 +2,13 @@
 ///
 /// To be removed...
 
-use axlog::info;
-
-use axhal::mem::{phys_to_virt, virt_to_phys, PhysAddr};
-
-use hypercraft::GuestPageTableTrait;
-use hypercraft::HyperError as Error;
-use hypercraft::HyperResult as Result;
-use hypercraft::HyperCraftHal;
+// use hypercraft::GuestPageTableTrait;
 use hypercraft::{PerCpu, VCpu, VmCpus, VM};
-#[cfg(not(target_arch = "aarch64"))]
-use hypercraft::{HyperCallMsg, VmExitInfo, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
-#[cfg(target_arch = "x86_64")]
-use hypercraft::{PerCpuDevices, PerVmDevices, VmxExitReason};
+
 
 #[cfg(target_arch = "x86_64")]
 use super::device::{self, X64VcpuDevices, X64VmDevices};
 
-use super::page_table::GuestPageTable;
 use super::hal::HyperCraftHalImpl;
 
 pub fn linux(hart_id: usize) {
@@ -52,8 +41,8 @@ pub fn linux(hart_id: usize) {
         }
     }
 
-    println!("Running guest...");
-    println!("{:?}", vm.run_vcpu(0));
+    info!("Running guest...");
+    info!("{:?}", vm.run_vcpu(0));
 
     p.hardware_disable().unwrap();
 

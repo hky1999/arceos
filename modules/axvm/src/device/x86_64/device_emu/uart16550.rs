@@ -1,6 +1,5 @@
 //! Emulated UART 16550. (ref: https://wiki.osdev.org/Serial_Ports)
 //! 
-use core::{marker::PhantomData};
 
 use super::PortIoDevice;
 
@@ -86,12 +85,12 @@ impl VirtualConsoleBackend for DefaultConsoleBackend {
     }
 
     fn putchar(&mut self, c: u8) {
-        use libax::io::console as uart;
+        use axhal::console as uart;
         uart::putchar(c)
     }
 
     fn getchar(&mut self) -> Option<u8> {
-        use libax::io::console as uart;
+        use axhal::console as uart;
         uart::getchar()
     }
 }
@@ -117,7 +116,7 @@ impl VirtualConsoleBackend for MultiplexConsoleBackend {
     fn putchar(&mut self, c: u8) {
         match self {
             MultiplexConsoleBackend::Primary => {
-                use libax::io::console as uart;
+                use axhal::console as uart;
                 uart::putchar(c)
             },
             MultiplexConsoleBackend::Secondary { id, buffer, .. } => {
@@ -141,7 +140,7 @@ impl VirtualConsoleBackend for MultiplexConsoleBackend {
     fn getchar(&mut self) -> Option<u8> {
         match self {
             MultiplexConsoleBackend::Primary => {
-                use libax::io::console as uart;
+                use axhal::console as uart;
                 uart::getchar()
             },
             MultiplexConsoleBackend::Secondary { input, input_ptr, .. } => {

@@ -1,5 +1,5 @@
 use super::PortIoDevice;
-use crate::{Result as HyperResult, Error as HyperError};
+use crate::Result as HyperResult;
 
 pub struct DebugPort {
     port: u16

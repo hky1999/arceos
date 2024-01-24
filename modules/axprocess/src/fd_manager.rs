@@ -5,7 +5,6 @@ use core::sync::atomic::{AtomicI32, AtomicU64};
 use alloc::string::String;
 use alloc::sync::Arc;
 use axfs::api::{FileIO, OpenFlags};
-use axlog::info;
 
 use alloc::vec::Vec;
 use axsync::Mutex;

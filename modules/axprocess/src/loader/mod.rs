@@ -13,7 +13,6 @@ pub const USER_STACK_SIZE: usize = 0x20_0000;
 use axerrno::AxResult;
 mod user_stack;
 use axhal::{mem::VirtAddr, paging::MappingFlags};
-use axlog::info;
 use axmem::MemorySet;
 use core::str::from_utf8;
 use xmas_elf::{program::SegmentData, ElfFile};

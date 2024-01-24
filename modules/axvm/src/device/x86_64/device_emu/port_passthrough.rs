@@ -1,5 +1,5 @@
 use super::PortIoDevice;
-use crate::{Result as HyperResult, Error as HyperError, HyperCraftHal, HyperCraftHalImpl};
+use crate::{Result as HyperResult, Error as HyperError};
 use x86::io;
 
 pub struct PortPassthrough {

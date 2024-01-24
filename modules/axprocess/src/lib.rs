@@ -4,6 +4,9 @@ pub use api::*;
 mod process;
 pub use process::{Process, PID2PC, TID2TASK};
 
+#[macro_use]
+extern crate log;
+
 pub mod flags;
 pub mod futex;
 pub mod link;

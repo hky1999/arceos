@@ -1,5 +1,4 @@
 use super::PortIoDevice;
-use bit_field::BitField;
 use crate::{Result as HyperResult, Error as HyperError};
 use x86::io;
 

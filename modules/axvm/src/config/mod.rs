@@ -1,3 +1,6 @@
+use crate::{HostPhysAddr, GuestPhysAddr};
+
+
 macro_rules! cfg_block {
     ($( #[$meta:meta] {$($item:item)*} )*) => {
         $($(

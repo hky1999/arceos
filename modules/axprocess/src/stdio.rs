@@ -5,7 +5,6 @@ use axfs::api::port::{
 };
 use axhal::console::{getchar, write_bytes};
 use axio::{Read, Seek, SeekFrom, Write};
-use axlog::warn;
 use axsync::Mutex;
 use axtask::yield_now;
 /// stdin file for getting chars from console

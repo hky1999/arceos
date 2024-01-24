@@ -2,13 +2,12 @@ pub mod device_emu;
 
 extern crate alloc;
 
-use axlog::*;
 use bit_field::BitField;
 use alloc::{sync::Arc, vec, vec::Vec};
 use spin::Mutex;
 use core::marker::PhantomData;
 use crate::{Result as HyperResult, VmExitInfo, VCpu, HyperCraftHal, PerCpuDevices, PerVmDevices, VmxExitReason};
-use crate::{Error as HyperError, VmExitInfo as VmxExitInfo, HyperCraftHalImpl};
+use crate::{Error as HyperError, VmExitInfo as VmxExitInfo};
 
 use device_emu::{VirtMsrDevice, PortIoDevice, Bundle, VirtLocalApic, ApicBaseMsrHandler};
 
@@ -245,7 +244,7 @@ impl<H: HyperCraftHal> PerCpuDevices<H> for X64VcpuDevices<H> {
         // inject 0x30(irq 0) every 1 ms after 10 seconds after booting.
         match self.last {
             Some(last) => {
-                let now = libax::time::current_time_nanos();
+                let now = axhal::time::current_time_nanos();
                 if now > 1_000_000 + last {
                     if !self.pic[0].lock().mask().get_bit(0) {
                         vcpu.queue_event(0x30, None);
@@ -256,7 +255,7 @@ impl<H: HyperCraftHal> PerCpuDevices<H> for X64VcpuDevices<H> {
                 }
             },
             None => {
-                self.last = Some(libax::time::current_time_nanos() + 10_000_000_000);
+                self.last = Some(axhal::time::current_time_nanos() + 10_000_000_000);
             },
         }
 
@@ -280,7 +279,7 @@ impl<H: HyperCraftHal> X64VmDevices<H> {
 
         assert!(int_info.valid);
 
-        libax::hv::dispatch_host_irq(int_info.vector as usize)
+        crate::dispatch_host_irq(int_info.vector as usize)
     }
 }
 

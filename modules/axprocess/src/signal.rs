@@ -3,7 +3,6 @@ extern crate alloc;
 use alloc::sync::Arc;
 use axerrno::{AxError, AxResult};
 use axhal::{arch::TrapFrame, cpu::this_cpu_id, KERNEL_PROCESS_ID};
-use axlog::{info, warn};
 use axsignal::{
     action::{SigActionFlags, SignalDefault, SIG_IGN},
     info::SigInfo,

@@ -15,7 +15,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
 
     let sysno = Sysno::new(syscall_id).unwrap();
 
-    axlog::info!(
+    info!(
         "[SYSCALL] {syscall_id} {} [{:#x}, {:#x}, {:#x}]",
         sysno.name(),
         args[0],

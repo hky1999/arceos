@@ -50,7 +50,7 @@ impl GuestPageTableTrait for GuestPageTable {
                 .map(
                     VirtAddr::from(gpa),
                     PhysAddr::from(hpa),
-                    page_table::PageSize::Size4K,
+                    axhal::paging::PageSize::Size4K,
                     flags,
                 )
                 .map_err(|paging_err| {

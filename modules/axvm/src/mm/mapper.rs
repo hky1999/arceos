@@ -1,5 +1,4 @@
 use axhal::mem::{PhysAddr, VirtAddr};
-use axlog::error;
 
 use hypercraft::{GuestPageTableTrait, GuestPhysAddr, HyperError, HyperResult, NestedPageTable};
 
@@ -48,10 +47,10 @@ impl GuestPageTableTrait for GuestPageTable {
                 .map(
                     VirtAddr::from(gpa),
                     PhysAddr::from(hpa),
-                    page_table::PageSize::Size4K,
+                    axhal::paging::PageSize::Size4K,
                     flags,
                 )
-                .map_err(|paging_err| {
+                .map_err(|paging_err: axhal::paging::PagingError| {
                     error!("paging error: {:?}", paging_err);
                     HyperError::Internal
                 })?;

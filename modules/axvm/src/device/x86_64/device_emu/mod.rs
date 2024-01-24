@@ -10,9 +10,8 @@ mod port_passthrough;
 mod uart16550;
 
 extern crate alloc;
-use alloc::{sync::Arc, vec, vec::Vec};
-use spin::Mutex;
-use crate::{Result as HyperResult, Error as HyperError};
+
+use crate::Result as HyperResult;
 
 pub use apic_timer::{VirtLocalApic, ApicBaseMsrHandler};
 pub use bundle::Bundle;
@@ -20,10 +19,9 @@ pub use debug_port::DebugPort;
 pub use dummy::Dummy;
 pub use i8259_pic::I8259Pic;
 pub use pci::PCIConfigurationSpace;
-pub use pcip::PCIPassthrough;
-pub use pit::PIT;
+
 pub use port_passthrough::PortPassthrough;
-pub use uart16550::{Uart16550, DefaultConsoleBackend, MultiplexConsoleBackend, VirtualConsoleBackend};
+pub use uart16550::{Uart16550, MultiplexConsoleBackend};
 
 pub trait PortIoDevice: Send + Sync {
     fn port_range(&self) -> core::ops::Range<u16>;
@@ -48,11 +46,11 @@ macro_rules! pmio_proxy_struct {
                 ($port_begin)..(($port_end) + 1)
             }
         
-            fn read(&mut self, port: u16, access_size: u8) -> libax::hv::Result<u32> {
+            fn read(&mut self, port: u16, access_size: u8) -> crate::Result<u32> {
                 self.parent.lock().$reader(port, access_size)
             }
         
-            fn write(&mut self, port: u16, access_size: u8, value: u32) -> libax::hv::Result {
+            fn write(&mut self, port: u16, access_size: u8, value: u32) -> crate::Result {
                 self.parent.lock().$writer(port, access_size, value)
             }
         }
@@ -78,11 +76,11 @@ macro_rules! msr_proxy_struct {
                 ($msr_begin)..(($msr_end) + 1)
             }
 
-            fn read(&mut self, msr: u32) -> libax::hv::Result<u64> {
+            fn read(&mut self, msr: u32) -> crate::Result<u64> {
                 self.parent.lock().$reader(msr)
             }
 
-            fn write(&mut self, msr: u32, value: u64) -> libax::hv::Result {
+            fn write(&mut self, msr: u32, value: u64) -> crate::Result {
                 self.parent.lock().$writer(msr, value)
             }
         }

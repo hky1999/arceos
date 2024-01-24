@@ -1,6 +1,6 @@
+use crate::{Result as HyperResult, Error as HyperError};
+use axhal::time::current_time_nanos;
 use bit_field::BitField;
-use crate::{Result as HyperResult, Error as HyperError, HyperCraftHal, HyperCraftHalImpl};
-use libax::time::current_time_nanos;
 
 pub const PIT_FREQ: u32 = 1_193182;
 pub const PIT_CHANNEL_COUNT: usize = 3;

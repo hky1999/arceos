@@ -1,11 +1,9 @@
 /// Bundle for CMOS, NMI, PIT and Speaker
 
 extern crate alloc;
-use alloc::sync::Arc;
 use bit_field::BitField;
 use crate::{Result as HyperResult, Error as HyperError};
-use spin::Mutex;
-use super::{PortIoDevice, pit::PIT};
+use super::pit::PIT;
 use super::{pmio_proxy_factory, pmio_proxy_struct};
 
 pub const PORT_SYSTEM_CONTROL_A: u16 = 0x92;

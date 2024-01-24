@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-guest_nimbos = []
-guest_linux = []
+guest_nimbos = ["axvm/guest_nimbos"]
+guest_linux = ["axvm/guest_linux"]
 
 [dependencies]
 libax = { path = "../../ulib/libax", features = ["alloc", "hv"] }

@@ -1,17 +1,13 @@
 use alloc::collections::BTreeMap;
-use core::{
-    fmt::{Debug, Formatter, Result},
-    marker::PhantomData,
-};
+use core::fmt::{Debug, Formatter, Result};
 
 use hypercraft::{
-    GuestPageTableTrait, GuestPhysAddr, HostPhysAddr, HostVirtAddr, HyperCraftHal, PerCpuDevices,
-    PerVmDevices, VCpu, VmExitInfo,
+    GuestPageTableTrait, GuestPhysAddr, HostPhysAddr, HyperCraftHal,
 };
 
 use page_table_entry::MappingFlags;
 
-use crate::{phys_to_virt, virt_to_phys, Error, GuestPageTable, Result as HyperResult};
+use crate::{Error, GuestPageTable, Result as HyperResult};
 
 use crate::hal::HyperCraftHalImpl;
 
@@ -181,18 +177,4 @@ impl Debug for GuestPhysMemorySet {
             .field("regions", &self.regions)
             .finish()
     }
-}
-
-#[repr(align(4096))]
-pub(super) struct AlignedMemory<const LEN: usize>([u8; LEN]);
-
-pub(super) static mut GUEST_PHYS_MEMORY: [AlignedMemory<GUEST_PHYS_MEMORY_SIZE>; 2] = [
-    AlignedMemory([0; GUEST_PHYS_MEMORY_SIZE]),
-    AlignedMemory([0; GUEST_PHYS_MEMORY_SIZE]),
-];
-
-fn gpa_as_mut_ptr(id: usize, guest_paddr: GuestPhysAddr) -> *mut u8 {
-    let offset = unsafe { &(GUEST_PHYS_MEMORY[id]) as *const _ as usize };
-    let host_vaddr = guest_paddr + offset;
-    host_vaddr as *mut u8
 }

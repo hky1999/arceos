@@ -1,10 +1,9 @@
 //! Emulated Local APIC. (SDM Vol. 3A, Chapter 10)
 
 #![allow(dead_code)]
-use crate::{Result as HyperResult, Error as HyperError, VCpu, HyperCraftHal};
+use crate::{Result as HyperResult, Error as HyperError};
 use bit_field::BitField;
-use crate::HyperCraftHalImpl;
-use libax::time::current_time_nanos;
+use axhal::time::current_time_nanos;
 
 use super::{msr_proxy_struct, msr_proxy_factory, VirtMsrDevice};
 

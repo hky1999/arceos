@@ -6,7 +6,6 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use axerrno::{AxError, AxResult};
 use axfs::api::{canonicalize, path_exists, remove_file, FileIOType};
-use axlog::{debug, info, trace};
 use axsync::Mutex;
 
 use crate::current_process;
@@ -126,11 +125,11 @@ pub unsafe fn raw_ptr_to_ref_str(start: *const u8) -> &'static str {
     if let Ok(s) = core::str::from_utf8(slice) {
         s
     } else {
-        axlog::error!("not utf8 slice");
+        error!("not utf8 slice");
         for c in slice {
-            axlog::error!("{c} ");
+            error!("{c} ");
         }
-        axlog::error!("");
+        error!("");
         &"p"
     }
 }
@@ -274,7 +273,7 @@ pub fn deal_with_path(
     let mut path = "".to_string();
     if let Some(path_addr) = path_addr {
         if path_addr.is_null() {
-            axlog::debug!("path address is null");
+            debug!("path address is null");
             return None;
         }
         if process
@@ -284,7 +283,7 @@ pub fn deal_with_path(
             // 直接访问前需要确保已经被分配
             path = unsafe { raw_ptr_to_ref_str(path_addr) }.to_string().clone();
         } else {
-            axlog::debug!("path address is invalid");
+            debug!("path address is invalid");
             return None;
         }
     }
@@ -302,22 +301,22 @@ pub fn deal_with_path(
         // 如果不是绝对路径, 且dir_fd不是AT_FDCWD, 则需要将dir_fd和path拼接起来
         let fd_table = process.fd_manager.fd_table.lock();
         if dir_fd >= fd_table.len() {
-            axlog::debug!("fd index out of range");
+            debug!("fd index out of range");
             return None;
         }
         match fd_table[dir_fd].as_ref() {
             Some(dir) => {
                 if dir.get_type() != FileIOType::DirDesc {
-                    axlog::debug!("selected fd is not a dir");
+                    debug!("selected fd is not a dir");
                     return None;
                 }
                 let dir = dir.clone();
                 // 有没有可能dir的尾部一定是一个/号，所以不用手工添加/
                 path = format!("{}{}", dir.get_path(), path);
-                axlog::debug!("handled_path: {}", path);
+                debug!("handled_path: {}", path);
             }
             None => {
-                axlog::debug!("fd not exist");
+                debug!("fd not exist");
                 return None;
             }
         }

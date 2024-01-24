@@ -10,7 +10,6 @@ use axerrno::{AxError, AxResult};
 use axhal::mem::VirtAddr;
 use axhal::paging::MappingFlags;
 use axhal::KERNEL_PROCESS_ID;
-use axlog::{debug, info};
 use axmem::MemorySet;
 // #[cfg(feature = "signal")]
 // use axsignal::signal_no::SignalNo;
@@ -195,9 +194,9 @@ pub fn load_hello_app(memory_set: &mut MemorySet) -> AxResult<(VirtAddr, VirtAdd
 }
 
 pub fn handle_page_fault(addr: VirtAddr, flags: MappingFlags) {
-    axlog::debug!("'page fault' addr: {:?}, flags: {:?}", addr, flags);
+    debug!("'page fault' addr: {:?}, flags: {:?}", addr, flags);
     let current_process = current_process();
-    axlog::debug!(
+    debug!(
         "memory token : {}",
         current_process.memory_set.lock().page_table_token()
     );

@@ -9,6 +9,11 @@
 #![feature(doc_cfg)]
 #![feature(doc_auto_cfg)]
 
+extern crate alloc;
+
+#[macro_use]
+extern crate log;
+
 mod mm;
 mod config;
 #[cfg(target_arch = "x86_64")]
@@ -20,8 +25,6 @@ mod page_table;
 /// To be removed.
 mod linux;
 pub use linux::linux;
-
-//! Hypervisor related functions
 
 pub use axhal::mem::{phys_to_virt, virt_to_phys, PhysAddr};
 pub use page_table::GuestPageTable;

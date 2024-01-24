@@ -1,11 +1,25 @@
 use super::{BIOS_ENTRY, BIOS_PADDR, BIOS_SIZE, GUEST_PHYS_MEMORY_BASE, GUEST_PHYS_MEMORY_SIZE};
 use crate::mm::{GuestMemoryRegion, GuestPhysMemorySet};
-use crate::{phys_to_virt, virt_to_phys, Error, GuestPageTable, Result as HyperResult};
+use crate::{phys_to_virt, virt_to_phys, Result as HyperResult};
 use hypercraft::{
-    GuestPageTableTrait, GuestPhysAddr, HostPhysAddr, HostVirtAddr, HyperCraftHal, PerCpuDevices,
-    PerVmDevices, VCpu, VmExitInfo,
+    GuestPageTableTrait, GuestPhysAddr, HostPhysAddr, HostVirtAddr,
 };
+
 use page_table_entry::MappingFlags;
+
+#[repr(align(4096))]
+pub(super) struct AlignedMemory<const LEN: usize>([u8; LEN]);
+
+pub(super) static mut GUEST_PHYS_MEMORY: [AlignedMemory<GUEST_PHYS_MEMORY_SIZE>; 2] = [
+    AlignedMemory([0; GUEST_PHYS_MEMORY_SIZE]),
+    AlignedMemory([0; GUEST_PHYS_MEMORY_SIZE]),
+];
+
+fn gpa_as_mut_ptr(id: usize, guest_paddr: GuestPhysAddr) -> *mut u8 {
+    let offset = unsafe { &(GUEST_PHYS_MEMORY[id]) as *const _ as usize };
+    let host_vaddr = guest_paddr + offset;
+    host_vaddr as *mut u8
+}
 
 #[cfg(target_arch = "x86_64")]
 fn load_guest_image(id: usize, hpa: HostPhysAddr, load_gpa: GuestPhysAddr, size: usize) {
