@@ -109,6 +109,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "axprocess",
+ "axvm",
  "bit_field",
  "bitflags 2.4.1",
  "fdt",
@@ -513,6 +514,7 @@ dependencies = [
  "axruntime",
  "hypercraft",
  "page_table_entry",
+ "spin 0.9.8",
 ]
 
 [[package]]

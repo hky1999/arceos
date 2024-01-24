@@ -33,15 +33,15 @@ mod mp;
 #[cfg(feature = "smp")]
 pub use self::mp::rust_main_secondary;
 
-#[cfg(feature = "hv")]
-mod gpm;
-#[cfg(feature = "hv")]
-mod hv;
+// #[cfg(feature = "hv")]
+// mod gpm;
+// #[cfg(feature = "hv")]
+// mod hv;
 
-#[cfg(feature = "hv")]
-pub use gpm::GuestPageTable;
-#[cfg(feature = "hv")]
-pub use hv::HyperCraftHalImpl;
+// #[cfg(feature = "hv")]
+// pub use gpm::GuestPageTable;
+// #[cfg(feature = "hv")]
+// pub use hv::HyperCraftHalImpl;
 
 
 const LOGO: &str = r#"
@@ -213,7 +213,7 @@ pub extern "C" fn rust_main(cpu_id: usize, dtb: usize) -> ! {
 
     #[cfg(feature = "hv")]
     unsafe {
-        main(cpu_id)
+        main()
     };
 
     #[cfg(not(feature = "hv"))]

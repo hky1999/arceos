@@ -61,8 +61,8 @@ extern crate alloc;
 #[doc(no_inline)]
 pub use alloc::{boxed, format, string, vec};
 
-#[cfg(feature = "hv")]
-pub mod hv;
+// #[cfg(feature = "hv")]
+// pub mod hv;
 
 pub mod env;
 pub mod io;

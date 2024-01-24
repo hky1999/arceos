@@ -1,63 +1,66 @@
+//! [ArceOS](https://github.com/rcore-os/arceos) virtial machine monitor management module.
+//!
+//! This module provides primitives for VM management, including VM
+//! creation, two-stage memory management, device emulation, etc.
+//! 
+//! This module is WORK-IN-PROCESS.
+
 #![cfg_attr(not(test), no_std)]
 #![feature(doc_cfg)]
 #![feature(doc_auto_cfg)]
 
-use axlog::info;
-
-use axhal::mem::{phys_to_virt, virt_to_phys, PhysAddr};
-use axruntime::GuestPageTable;
-use axruntime::HyperCraftHalImpl;
-use hypercraft::GuestPageTableTrait;
-
-use hypercraft::HyperError as Error;
-use hypercraft::HyperResult as Result;
-use hypercraft::HyperCraftHal;
-use hypercraft::{PerCpu, VCpu, VmCpus, VM};
-#[cfg(not(target_arch = "aarch64"))]
-use hypercraft::{HyperCallMsg, VmExitInfo, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
-#[cfg(target_arch = "x86_64")]
-use hypercraft::{PerCpuDevices, PerVmDevices, VmxExitReason};
-
 mod mm;
 mod config;
+#[cfg(target_arch = "x86_64")]
+mod device;
 
 mod hal;
 mod page_table;
 
+/// To be removed.
+mod linux;
+pub use linux::linux;
 
-fn linux(hart_id: usize) {
-    info!("into main {}", hart_id);
+//! Hypervisor related functions
 
-    let mut p = PerCpu::<HyperCraftHalImpl>::new(hart_id);
-    p.hardware_enable().unwrap();
+pub use axhal::mem::{phys_to_virt, virt_to_phys, PhysAddr};
+pub use page_table::GuestPageTable;
+pub use hal::HyperCraftHalImpl;
 
-    let gpm = x64::setup_gpm(hart_id).unwrap();
-    let npt = gpm.nest_page_table_root();
-    info!("{:#x?}", gpm);
+pub use hypercraft::GuestPageTableTrait;
 
-    let mut vcpus = VmCpus::<HyperCraftHalImpl, X64VcpuDevices<HyperCraftHalImpl>>::new();
-    vcpus.add_vcpu(VCpu::new(0, p.vmcs_revision_id(), 0x7c00, npt).unwrap());
+pub use hypercraft::HyperError as Error;
+pub use hypercraft::HyperResult as Result;
+pub use hypercraft::HyperCraftHal;
+pub use hypercraft::{PerCpu, VCpu, VmCpus, VM};
+#[cfg(not(target_arch = "aarch64"))]
+pub use hypercraft::{HyperCallMsg, VmExitInfo, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
+#[cfg(target_arch = "x86_64")]
+pub use hypercraft::{PerCpuDevices, PerVmDevices, VmxExitReason};
 
-    let mut vm = VM::<
-        HyperCraftHalImpl,
-        X64VcpuDevices<HyperCraftHalImpl>,
-        X64VmDevices<HyperCraftHalImpl>,
-    >::new(vcpus);
-    vm.bind_vcpu(0);
-
-    if hart_id == 0 {
-        let (_, dev) = vm.get_vcpu_and_device(0).unwrap();
-        *(dev.console.lock().backend()) = device::device_emu::MultiplexConsoleBackend::Primary;
-
-        for v in 0..256 {
-            libax::hv::set_host_irq_enabled(v, true);
-        }
+#[cfg(target_arch = "x86_64")]
+pub fn dispatch_host_irq(vector: usize) -> Result {
+    #[cfg(feature = "irq")] 
+    {
+        axhal::irq::dispatch_irq(vector);
+        Ok(())
     }
-
-    println!("Running guest...");
-    println!("{:?}", vm.run_vcpu(0));
-
-    p.hardware_disable().unwrap();
-
-    panic!("done");
+    #[cfg(not(feature = "irq"))] 
+    {
+        panic!("cannot handle EXTERNAL_INTERRUPT vmexit because \"irq\" is not enabled")
+    }
 }
+
+#[cfg(target_arch = "x86_64")]
+pub fn set_host_irq_enabled(vector: usize, enabled: bool) -> Result {
+    #[cfg(feature = "irq")] 
+    {
+        axhal::irq::set_enable(vector, enabled);
+        Ok(())
+    }
+    #[cfg(not(feature = "irq"))] 
+    {
+        panic!("cannot call set_host_irq_enabled because \"irq\" is not enabled")
+    }
+}
+

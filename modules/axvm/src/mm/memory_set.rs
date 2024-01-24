@@ -1,9 +1,19 @@
 use alloc::collections::BTreeMap;
-use core::{fmt::{Debug, Formatter, Result}, marker::PhantomData};
+use core::{
+    fmt::{Debug, Formatter, Result},
+    marker::PhantomData,
+};
 
-use hypercraft::{HyperCraftHal, HyperCraftHalImpl, GuestPhysAddr, HostPhysAddr, HostVirtAddr, phys_to_virt, virt_to_phys, Result as HyperResult, Error, GuestPageTable, GuestPageTableTrait, PerCpuDevices, VCpu, VmExitInfo, PerVmDevices};
+use hypercraft::{
+    GuestPageTableTrait, GuestPhysAddr, HostPhysAddr, HostVirtAddr, HyperCraftHal, PerCpuDevices,
+    PerVmDevices, VCpu, VmExitInfo,
+};
 
 use page_table_entry::MappingFlags;
+
+use crate::{phys_to_virt, virt_to_phys, Error, GuestPageTable, Result as HyperResult};
+
+use crate::hal::HyperCraftHalImpl;
 
 pub const fn is_aligned(addr: usize) -> bool {
     (addr & (HyperCraftHalImpl::PAGE_SIZE - 1)) == 0
@@ -176,8 +186,10 @@ impl Debug for GuestPhysMemorySet {
 #[repr(align(4096))]
 pub(super) struct AlignedMemory<const LEN: usize>([u8; LEN]);
 
-pub(super) static mut GUEST_PHYS_MEMORY: [AlignedMemory<GUEST_PHYS_MEMORY_SIZE>; 2] =
-    [AlignedMemory([0; GUEST_PHYS_MEMORY_SIZE]), AlignedMemory([0; GUEST_PHYS_MEMORY_SIZE])];
+pub(super) static mut GUEST_PHYS_MEMORY: [AlignedMemory<GUEST_PHYS_MEMORY_SIZE>; 2] = [
+    AlignedMemory([0; GUEST_PHYS_MEMORY_SIZE]),
+    AlignedMemory([0; GUEST_PHYS_MEMORY_SIZE]),
+];
 
 fn gpa_as_mut_ptr(id: usize, guest_paddr: GuestPhysAddr) -> *mut u8 {
     let offset = unsafe { &(GUEST_PHYS_MEMORY[id]) as *const _ as usize };
@@ -190,7 +202,12 @@ fn load_guest_image(id: usize, hpa: HostPhysAddr, load_gpa: GuestPhysAddr, size:
     let image_ptr = usize::from(phys_to_virt(hpa.into())) as *const u8;
     let image = unsafe { core::slice::from_raw_parts(image_ptr, size) };
 
-    trace!("loading to guest memory: host {:#x} to guest {:#x}, size {:#x}", image_ptr as usize, load_gpa, size);
+    trace!(
+        "loading to guest memory: host {:#x} to guest {:#x}, size {:#x}",
+        image_ptr as usize,
+        load_gpa,
+        size
+    );
 
     unsafe {
         core::slice::from_raw_parts_mut(gpa_as_mut_ptr(id, load_gpa), size).copy_from_slice(image)
@@ -206,14 +223,15 @@ pub fn setup_gpm(id: usize) -> HyperResult<GuestPhysMemorySet> {
     {
         load_guest_image(id, GUEST_IMAGE_PADDR, GUEST_ENTRY, GUEST_IMAGE_SIZE);
     }
-    
+
     // create nested page table and add mapping
     let mut gpm = GuestPhysMemorySet::new()?;
     let guest_memory_regions = [
         GuestMemoryRegion {
             // Low RAM
             gpa: GUEST_PHYS_MEMORY_BASE,
-            hpa: virt_to_phys((gpa_as_mut_ptr(id, GUEST_PHYS_MEMORY_BASE) as HostVirtAddr).into()).into(),
+            hpa: virt_to_phys((gpa_as_mut_ptr(id, GUEST_PHYS_MEMORY_BASE) as HostVirtAddr).into())
+                .into(),
             size: GUEST_PHYS_MEMORY_SIZE,
             flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::EXECUTE,
         },
