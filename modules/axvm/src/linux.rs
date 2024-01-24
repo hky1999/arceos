@@ -1,29 +1,29 @@
 /// Temporar module to boot Linux as a guest VM.
 ///
 /// To be removed...
-
 // use hypercraft::GuestPageTableTrait;
 use hypercraft::{PerCpu, VCpu, VmCpus, VM};
-
 
 #[cfg(target_arch = "x86_64")]
 use super::device::{self, X64VcpuDevices, X64VmDevices};
 
 use super::hal::HyperCraftHalImpl;
 
-pub fn linux(hart_id: usize) {
-    
+use crate::arch::pcpu;
+
+pub fn config_linux(hart_id: usize) {
     info!("into main {}", hart_id);
 
-    let mut p = PerCpu::<HyperCraftHalImpl>::new(hart_id);
-    p.hardware_enable().unwrap();
+    crate::arch::pcpu::cpu_hv_enable_hardware(hart_id);
 
     let gpm = super::config::setup_gpm(hart_id).unwrap();
     let npt = gpm.nest_page_table_root();
     info!("{:#x?}", gpm);
 
+    let vcpu = VCpu::new(0, crate::arch::pcpu::cpu_vmcs_revision_id(), 0x7c00, npt).unwrap();
+
     let mut vcpus = VmCpus::<HyperCraftHalImpl, X64VcpuDevices<HyperCraftHalImpl>>::new();
-    vcpus.add_vcpu(VCpu::new(0, p.vmcs_revision_id(), 0x7c00, npt).unwrap()).expect("add vcpu failed");
+    vcpus.add_vcpu(vcpu).expect("add vcpu failed");
 
     let mut vm = VM::<
         HyperCraftHalImpl,
@@ -44,7 +44,7 @@ pub fn linux(hart_id: usize) {
     info!("Running guest...");
     info!("{:?}", vm.run_vcpu(0));
 
-    p.hardware_disable().unwrap();
+    crate::arch::pcpu::cpu_hv_hardware_disable();
 
     panic!("done");
 }

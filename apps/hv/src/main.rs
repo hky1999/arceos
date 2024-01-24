@@ -62,46 +62,6 @@ fn main() {
     linux::boot_linux(hart_id);
 
 	process::hello();
-
-    // #[cfg(target_arch = "x86_64")]
-    // {
-    //     println!("into main {}", hart_id);
-
-    //     let mut p = PerCpu::<HyperCraftHalImpl>::new(hart_id);
-    //     p.hardware_enable().unwrap();
-
-    //     let gpm = x64::setup_gpm(hart_id).unwrap();
-    //     let npt = gpm.nest_page_table_root();
-    //     info!("{:#x?}", gpm);
-
-    //     let mut vcpus = VmCpus::<HyperCraftHalImpl, X64VcpuDevices<HyperCraftHalImpl>>::new();
-    //     vcpus.add_vcpu(VCpu::new(0, p.vmcs_revision_id(), 0x7c00, npt).unwrap());
-        
-    //     let mut vm = VM::<HyperCraftHalImpl, X64VcpuDevices<HyperCraftHalImpl>, X64VmDevices<HyperCraftHalImpl>>::new(vcpus);
-    //     vm.bind_vcpu(0);
-
-    //     if hart_id == 0 {
-    //         let (_, dev) = vm.get_vcpu_and_device(0).unwrap();
-    //         *(dev.console.lock().backend()) = device::device_emu::MultiplexConsoleBackend::Primary;
-
-    //         for v in 0..256 {
-    //             libax::hv::set_host_irq_enabled(v, true);
-    //         }
-    //     }
-
-    //     println!("Running guest...");
-    //     println!("{:?}", vm.run_vcpu(0));
-
-    //     p.hardware_disable().unwrap();
-
-    //     panic!("done");
-
-    //     return;
-    // }
-    // #[cfg(not(any(target_arch = "riscv64", target_arch = "x86_64", target_arch = "aarch64")))]
-    // {
-    //     panic!("Other arch is not supported yet!")
-    // }
 }
 
 #[cfg(target_arch = "x86_64")]

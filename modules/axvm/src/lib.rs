@@ -3,7 +3,9 @@
 //! This module provides primitives for VM management, including VM
 //! creation, two-stage memory management, device emulation, etc.
 //!
-//! This module is WORK-IN-PROCESS.
+//! Currently `axvm` actes like a wrapper for [hypercraft](https://github.com/arceos-hypervisor/hypercraft.git).
+//!
+//! !!! This module is WORK-IN-PROCESS !!!
 
 #![cfg_attr(not(test), no_std)]
 #![feature(doc_cfg)]
@@ -19,21 +21,22 @@ mod config;
 mod device;
 mod mm;
 
+mod arch;
+
 mod hal;
 mod page_table;
-
+mod pcpu;
 mod irq;
 
 /// To be removed.
 mod linux;
-pub use linux::linux;
+pub use linux::config_linux;
 
 pub use axhal::mem::{phys_to_virt, virt_to_phys, PhysAddr};
 pub use hal::HyperCraftHalImpl;
 pub use page_table::GuestPageTable;
 
 pub use hypercraft::GuestPageTableTrait;
-
 pub use hypercraft::HyperCraftHal;
 pub use hypercraft::HyperError as Error;
 pub use hypercraft::HyperResult as Result;
@@ -44,4 +47,3 @@ pub use hypercraft::{
 pub use hypercraft::{PerCpu, VCpu, VmCpus, VM};
 #[cfg(target_arch = "x86_64")]
 pub use hypercraft::{PerCpuDevices, PerVmDevices, VmxExitReason};
-

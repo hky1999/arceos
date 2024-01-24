@@ -10,6 +10,7 @@ guest_nimbos = []
 guest_linux = []
 
 [dependencies]
+# third-party deps
 log = "0.4"
 spin = "0.9"
 bit_field = "0.10"
@@ -18,11 +19,15 @@ lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 fdt = { version = "0.1.5" }
 arrayvec = { version = "0.7.2", default-features = false }
 
+# ax modules
 axhal = { path = "../axhal" }
 axlog = { path = "../axlog" }
 axruntime = { path = "../axruntime", default-features = false }
 axalloc = { path = "../axalloc" }
 
+# ax crates
+percpu = { path = "../../crates/percpu" }
+lazy_init = { path = "../../crates/lazy_init" }
 hypercraft = { path = "../../crates/hypercraft" }
 page_table_entry = { path = "../../crates/page_table_entry", features = ["hv"] }
 
