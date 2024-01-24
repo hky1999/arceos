@@ -279,7 +279,7 @@ impl<H: HyperCraftHal> X64VmDevices<H> {
 
         assert!(int_info.valid);
 
-        crate::dispatch_host_irq(int_info.vector as usize)
+        crate::irq::dispatch_host_irq(int_info.vector as usize)
     }
 }
 

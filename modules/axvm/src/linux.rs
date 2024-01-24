@@ -37,7 +37,7 @@ pub fn linux(hart_id: usize) {
         *(dev.console.lock().backend()) = device::device_emu::MultiplexConsoleBackend::Primary;
 
         for v in 0..256 {
-            crate::set_host_irq_enabled(v, true);
+            crate::irq::set_host_irq_enabled(v, true);
         }
     }
 

@@ -36,7 +36,7 @@ endif
 
 # Platform
 ifeq ($(ARCH), x86_64)
-  ACCEL ?= n
+  ACCEL ?= y
   PLATFORM ?= pc-x86
   TARGET := x86_64-unknown-none
   BUS := pci
