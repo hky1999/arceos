@@ -23,27 +23,27 @@ mod mm;
 
 mod arch;
 
-mod hal;
 mod page_table;
-mod pcpu;
 mod irq;
+
+// mod vm;
+// pub use vm::*;
+
+pub use arch::{PerCpu, VCpu};
+
 
 /// To be removed.
 mod linux;
 pub use linux::config_linux;
 
 pub use axhal::mem::{phys_to_virt, virt_to_phys, PhysAddr};
-pub use hal::HyperCraftHalImpl;
 pub use page_table::GuestPageTable;
 
 pub use hypercraft::GuestPageTableTrait;
 pub use hypercraft::HyperCraftHal;
 pub use hypercraft::HyperError as Error;
 pub use hypercraft::HyperResult as Result;
-#[cfg(not(target_arch = "aarch64"))]
 pub use hypercraft::{
     GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, HyperCallMsg, VmExitInfo,
 };
-pub use hypercraft::{PerCpu, VCpu, VmCpus, VM};
-#[cfg(target_arch = "x86_64")]
 pub use hypercraft::{PerCpuDevices, PerVmDevices, VmxExitReason};

@@ -51,6 +51,9 @@ pub mod irq;
 #[cfg(feature = "paging")]
 pub mod paging;
 
+#[cfg(feature = "hv")]
+pub mod hv;
+
 /// Console input and output.
 pub mod console {
     pub use super::platform::console::*;

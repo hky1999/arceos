@@ -1,16 +1,18 @@
 /// Physical CPU config for virtualization support.
 use lazy_init::LazyInit;
 
-use hypercraft::{HostPhysAddr, HostVirtAddr, HyperCraftHal, PerCpu};
+use hypercraft::{HostPhysAddr, HostVirtAddr, HyperCraftHal};
 use x86::msr::P5_MC_ADDR;
 
-use crate::hal::HyperCraftHalImpl;
+pub use hypercraft::PerCpu;
+
+use axhal::hv::HyperCraftHalImpl;
 use crate::Result;
 
 #[percpu::def_percpu]
 static HV_PER_CPU: LazyInit<PerCpu<HyperCraftHalImpl>> = LazyInit::new();
 
-pub fn cpu_hv_enable_hardware(hart_id: usize) -> Result {
+pub fn cpu_hv_hardware_enable(hart_id: usize) -> Result {
     info!("Core [{hart_id}] init hardware support for virtualization...");
 
     let per_cpu = unsafe { HV_PER_CPU.current_ref_mut_raw() };

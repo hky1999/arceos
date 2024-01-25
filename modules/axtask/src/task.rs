@@ -11,7 +11,13 @@ use memory_addr::{align_up_4k, PhysAddr, VirtAddr};
 
 use crate::{AxRunQueue, AxTask, AxTaskRef, WaitQueue};
 
+#[cfg(feature = "monolithic")]
 use axhal::arch::TrapFrame;
+
+#[cfg(feature = "hv")]
+use axhal::hv::HyperCraftHalImpl;
+#[cfg(feature = "hv")]
+use hypercraft::VCpu;
 
 /// A unique identifier for a thread.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -32,8 +38,6 @@ pub struct ProcessInner {
     /// 是否是所属进程下的主线程
     is_leader: AtomicBool,
 
-    /// 初始化的trap上下文
-    // pub trap_frame: UnsafeCell<TrapFrame>,
     pub page_table_token: usize,
 
     set_child_tid: AtomicU64,
@@ -49,12 +53,12 @@ pub struct VcpuInner {
 pub enum TaskType {
     /// ArceOS task.
     Task { entry: Option<*mut dyn FnOnce()> },
-    #[cfg(feature = "monolithic")]
     /// User process.
+    #[cfg(feature = "monolithic")]
     Process { trap_frame: Box<TrapFrame> },
-    #[cfg(feature = "hv")]
     /// Virtual CPU.
-    Vcpu,
+    #[cfg(feature = "hv")]
+    Vcpu { vcpu: Box<VCpu<HyperCraftHalImpl>> },
 }
 
 /// The inner task structure.
@@ -83,7 +87,7 @@ pub struct TaskInner {
     kstack: Option<TaskStack>,
     /// On unikernel, this field stores the context of task.
     /// On Process, this field stores the kernel context of thread.
-    /// On Vcpu, this field stores the kernel context of root-mode.
+    /// On Vcpu, this field stores the kernel context of root-mode thread.
     ctx: UnsafeCell<TaskContext>,
 
     #[cfg(feature = "monolithic")]
@@ -407,7 +411,7 @@ impl TaskInner {
             .process_id
             .store(process_id, Ordering::Release);
     }
-    
+
     pub fn set_leader(&self, is_lead: bool) {
         self.process_inner
             .as_ref()
@@ -430,13 +434,15 @@ impl TaskInner {
     pub fn new_vcpu(
         name: String,
         stack_size: usize,
-        _vcpu_id: u64,
+        vcpu: VCpu<HyperCraftHalImpl>,
         _page_table_token: usize,
     ) -> AxTaskRef {
         let mut t = Self::new_common(TaskId::new(), name);
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
-        t.task_type = TaskType::Vcpu;
+        t.task_type = TaskType::Vcpu {
+            vcpu: Box::new(vcpu),
+        };
         t.ctx
             .get_mut()
             .init(task_entry as usize, kstack.top(), PhysAddr::from(0));
@@ -565,8 +571,9 @@ extern "C" fn task_entry() -> ! {
             let kernel_sp = task.get_kernel_stack_top().unwrap();
             unsafe { trap_frame.exec(kernel_sp) }
         }
-        TaskType::Vcpu => {
+        TaskType::Vcpu { vcpu } => {
             // vcpu::run
+            // vcpu.run();
             unimplemented!("Enter Vcpu")
         }
     }

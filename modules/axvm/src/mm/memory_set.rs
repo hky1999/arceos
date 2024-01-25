@@ -9,7 +9,7 @@ use page_table_entry::MappingFlags;
 
 use crate::{Error, GuestPageTable, Result as HyperResult};
 
-use crate::hal::HyperCraftHalImpl;
+use axhal::hv::HyperCraftHalImpl;
 
 pub const fn is_aligned(addr: usize) -> bool {
     (addr & (HyperCraftHalImpl::PAGE_SIZE - 1)) == 0

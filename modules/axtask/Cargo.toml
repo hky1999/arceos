@@ -16,7 +16,7 @@ multitask = [
     "dep:memory_addr", "dep:scheduler", "dep:timer_list"
 ]
 monolithic = []
-hv = []
+hv = ["dep:hypercraft"]
 irq = []
 preempt = ["irq", "percpu?/preempt", "kernel_guard/preempt"]
 
@@ -38,6 +38,7 @@ scheduler = { path = "../../crates/scheduler", optional = true }
 timer_list = { path = "../../crates/timer_list", optional = true }
 kernel_guard = { path = "../../crates/kernel_guard" }
 crate_interface = { path = "../../crates/crate_interface" }
+hypercraft = { path = "../../crates/hypercraft", optional = true }
 
 [dev-dependencies]
 rand = "0.8"
