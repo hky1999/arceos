@@ -17,7 +17,7 @@ use axhal::arch::TrapFrame;
 #[cfg(feature = "hv")]
 use axhal::hv::HyperCraftHalImpl;
 #[cfg(feature = "hv")]
-use hypercraft::VCpu;
+use hypercraft::{HyperCraftHal, VCpu};
 
 /// A unique identifier for a thread.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -58,7 +58,10 @@ pub enum TaskType {
     Process { trap_frame: Box<TrapFrame> },
     /// Virtual CPU.
     #[cfg(feature = "hv")]
-    Vcpu { vcpu: Box<VCpu<HyperCraftHalImpl>> },
+    Vcpu {
+        vm_id: usize,
+        vcpu: UnsafeCell<VCpu<HyperCraftHalImpl>>,
+    },
 }
 
 /// The inner task structure.
@@ -434,6 +437,8 @@ impl TaskInner {
     pub fn new_vcpu(
         name: String,
         stack_size: usize,
+        vcpu_id: usize,
+        vm_id: usize,
         vcpu: VCpu<HyperCraftHalImpl>,
         _page_table_token: usize,
     ) -> AxTaskRef {
@@ -441,7 +446,8 @@ impl TaskInner {
         debug!("new task: {}", t.id_name());
         let kstack = TaskStack::alloc(align_up_4k(stack_size));
         t.task_type = TaskType::Vcpu {
-            vcpu: Box::new(vcpu),
+            vm_id,
+            vcpu: UnsafeCell::new(vcpu),
         };
         t.ctx
             .get_mut()
@@ -593,11 +599,14 @@ extern "C" fn task_entry() -> ! {
             let kernel_sp = task.get_kernel_stack_top().unwrap();
             unsafe { trap_frame.exec(kernel_sp) }
         }
-        TaskType::Vcpu { vcpu } => {
+        TaskType::Vcpu { vm_id, vcpu } => {
             // vcpu::run
             // vcpu.run();
-            let _ = vcpu;
-            unimplemented!("Enter Vcpu")
+            let exit_info = unsafe { vcpu.get().as_mut().unwrap() }.run();
+            // let _ = vcpu.run();
+            warn!("Task vcpu exit {:?}", exit_info);
+
+            crate::exit(0)
         }
     }
 }

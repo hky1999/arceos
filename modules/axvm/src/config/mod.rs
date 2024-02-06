@@ -1,5 +1,4 @@
-use crate::{HostPhysAddr, GuestPhysAddr};
-
+use crate::{GuestPhysAddr, HostPhysAddr};
 
 macro_rules! cfg_block {
     ($( #[$meta:meta] {$($item:item)*} )*) => {
@@ -29,6 +28,8 @@ cfg_block! {
 }
 pub const GUEST_PHYS_MEMORY_BASE: GuestPhysAddr = 0;
 pub const GUEST_PHYS_MEMORY_SIZE: usize = 0x100_0000; // 16M
+
+pub const GUEST_ENTRY: usize = 0x7c00; // See vlbl.
 
 mod gpm_def;
 pub use gpm_def::setup_gpm;

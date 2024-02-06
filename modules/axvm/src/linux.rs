@@ -2,10 +2,17 @@
 ///
 /// To be removed...
 // use hypercraft::GuestPageTableTrait;
+use alloc::string::String;
+
+
 use hypercraft::{PerCpu, VCpu, VmCpus, VM};
+
+use super::config;
 
 #[cfg(target_arch = "x86_64")]
 use super::device::{self, X64VcpuDevices, X64VmDevices};
+
+use axtask::{current, AxTaskRef, TaskId, TaskInner, RUN_QUEUE};
 
 use axhal::hv::HyperCraftHalImpl;
 
@@ -17,23 +24,38 @@ pub fn config_boot_linux(hart_id: usize) {
 
     // Alloc guest memory set.
     // Fix: this should be stored inside VM structure.
-    let gpm = super::config::setup_gpm(hart_id).unwrap();
+    let gpm: crate::mm::GuestPhysMemorySet = config::setup_gpm(hart_id).unwrap();
     let npt = gpm.nest_page_table_root();
     info!("{:#x?}", gpm);
 
     // Main scheduling item, managed by `axtask`
-    let vcpu = VCpu::new(0, crate::arch::cpu_vmcs_revision_id(), 0x7c00, npt).unwrap();
+    let vcpu = VCpu::new(
+        0,
+        crate::arch::cpu_vmcs_revision_id(),
+        config::GUEST_ENTRY,
+        npt,
+    )
+    .unwrap();
 
     let mut vcpus = VmCpus::<HyperCraftHalImpl, X64VcpuDevices<HyperCraftHalImpl>>::new();
-    vcpus.add_vcpu(vcpu).expect("add vcpu failed");
+    // vcpus.add_vcpu(vcpu).expect("add vcpu failed");
 
     let mut vm = VM::<
         HyperCraftHalImpl,
         X64VcpuDevices<HyperCraftHalImpl>,
         X64VmDevices<HyperCraftHalImpl>,
     >::new(vcpus);
-	
-	// The bind_vcpu method should be decoupled with vm struct.
+
+    let new_task = TaskInner::new_vcpu(
+        String::from("vcpu"),
+        axconfig::TASK_STACK_SIZE,
+        0,
+        0,
+        vcpu,
+        0,
+    );
+
+    // The bind_vcpu method should be decoupled with vm struct.
     vm.bind_vcpu(0).expect("bind vcpu failed");
 
     if hart_id == 0 {
