@@ -34,8 +34,17 @@ pub use arch::{PerCpu, VCpu};
 
 
 /// To be removed.
+#[cfg(feature = "guest_linux")]
 mod linux;
-pub use linux::config_boot_linux;
+
+#[cfg(feature = "guest_nimbos")]
+mod nimbos;
+
+#[cfg(feature = "guest_linux")]
+pub use linux::config_boot_first_vm;
+
+#[cfg(feature = "guest_nimbos")]
+pub use nimbos::config_boot_first_vm;
 
 pub use axhal::mem::{phys_to_virt, virt_to_phys, PhysAddr};
 pub use page_table::GuestPageTable;

@@ -52,13 +52,13 @@ mod aarch64_config;
 // mod device;
 
 mod process;
-mod linux;
+mod vm;
 
 #[no_mangle]
 fn main() {
     println!("Hello, hv!");
     println!("Currently Linux inside VM is pinned on Core 0");
-    linux::boot_linux(0);
+    vm::boot_first_vm(0);
 
 	loop {
         libax::thread::sleep(libax::time::Duration::from_secs(1));
