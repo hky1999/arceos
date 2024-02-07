@@ -1,6 +1,20 @@
-use axalloc::global_allocator;
 use crate::mem::{phys_to_virt, virt_to_phys, PAGE_SIZE_4K};
+use axalloc::global_allocator;
 use hypercraft::{HostPhysAddr, HostVirtAddr, HyperCraftHal};
+
+use crate_interface::{call_interface, def_interface};
+
+#[def_interface]
+pub trait VMExitHandler {
+    /// Handle hypercall.
+    fn vmexit_handler(vcpu: &mut hypercraft::VCpu<HyperCraftHalImpl>) -> hypercraft::HyperResult;
+}
+
+#[allow(dead_code)]
+#[no_mangle]
+fn handle_vmexit(vcpu: &mut hypercraft::VCpu<HyperCraftHalImpl>) -> hypercraft::HyperResult {
+    call_interface!(VMExitHandler::vmexit_handler, vcpu)
+}
 
 /// An empty struct to implementate of `HyperCraftHal`
 pub struct HyperCraftHalImpl;
@@ -27,5 +41,10 @@ impl HyperCraftHal for HyperCraftHalImpl {
 
     fn current_time_nanos() -> u64 {
         crate::time::current_time_nanos()
+    }
+
+    /// VM-Exit handler.
+    fn vmexit_handler(vcpu: &mut hypercraft::VCpu<Self>) -> hypercraft::HyperResult {
+        handle_vmexit(vcpu)
     }
 }

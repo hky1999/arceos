@@ -600,13 +600,12 @@ extern "C" fn task_entry() -> ! {
             unsafe { trap_frame.exec(kernel_sp) }
         }
         TaskType::Vcpu { vm_id, vcpu } => {
-            // vcpu::run
-            // vcpu.run();
-            let exit_info = unsafe { vcpu.get().as_mut().unwrap() }.run();
-            // let _ = vcpu.run();
-            warn!("Task vcpu exit {:?}", exit_info);
-
-            crate::exit(0)
+            let vcpu = unsafe { vcpu.get().as_mut().unwrap() };
+            loop {
+                let exit_info = vcpu.run();
+                // let _ = vcpu.run();
+                warn!("Task vcpu exit {:?}", exit_info);
+            }
         }
     }
 }

@@ -22,6 +22,7 @@ pub trait TrapHandler {
     fn handle_page_fault(addr: VirtAddr, flags: MappingFlags, tf: &mut TrapFrame);
 }
 
+#[cfg(feature = "monolithic")]
 #[def_interface]
 pub trait SyscallHandler {
 	/// Handle syscall from user process.

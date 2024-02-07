@@ -20,7 +20,7 @@ pub fn config_boot_first_vm(hart_id: usize) {
     info!("into main {}", hart_id);
 
     // Fix: this function shoule be moved to somewhere like vm_entry.
-    crate::arch::cpu_hv_hardware_enable(hart_id);
+    // crate::arch::cpu_hv_hardware_enable(hart_id);
 
     // Alloc guest memory set.
     // Fix: this should be stored inside VM structure.
@@ -56,7 +56,7 @@ pub fn config_boot_first_vm(hart_id: usize) {
     );
 
     // The bind_vcpu method should be decoupled with vm struct.
-    vm.bind_vcpu(0).expect("bind vcpu failed");
+    // vm.bind_vcpu(0).expect("bind vcpu failed");
 
     if hart_id == 0 {
         let (_, dev) = vm.get_vcpu_and_device(0).unwrap();
@@ -67,10 +67,10 @@ pub fn config_boot_first_vm(hart_id: usize) {
         }
     }
 
-    info!("Running guest...");
-    info!("{:?}", vm.run_vcpu(0));
+    // info!("Running guest...");
+    // info!("{:?}", vm.run_vcpu(0));
 
-    crate::arch::cpu_hv_hardware_disable();
+    // crate::arch::cpu_hv_hardware_disable();
 
     panic!("done");
 }

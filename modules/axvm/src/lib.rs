@@ -26,9 +26,10 @@ mod arch;
 mod page_table;
 mod irq;
 mod hvc;
+mod vmexit;
 
-// mod vm;
-// pub use vm::*;
+mod vm;
+pub use vm::*;
 
 pub use arch::{PerCpu, VCpu};
 

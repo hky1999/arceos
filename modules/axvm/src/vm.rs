@@ -1,3 +1,7 @@
+use alloc::boxed::Box;
+use arrayvec::ArrayVec;
+use spin::Once;
+
 use super::arch::VCpu;
 use crate::Result;
 use axhal::hv::HyperCraftHalImpl;
@@ -8,9 +12,16 @@ pub use hypercraft::{HyperCraftHal, PerCpuDevices, PerVmDevices, VmCpus, VM};
 #[cfg(target_arch = "x86_64")]
 use super::device::{self, X64VcpuDevices, X64VmDevices};
 
+/// The maximum number of CPUs we can support.
+pub const MAX_CPUS: usize = 8;
+
+pub const VM_CPUS_MAX: usize = MAX_CPUS;
+
 pub struct VMInner<H: HyperCraftHal, PD: PerCpuDevices<H>, VD: PerVmDevices<H>> {
     vm: VM<H, PD, VD>,
     vcpus: VmCpus<H, PD>,
+    inner: [Once<VCpu<H>>; VM_CPUS_MAX],
+    device: [Once<PD>; VM_CPUS_MAX],
 }
 
 impl<H: HyperCraftHal, PD: PerCpuDevices<H>, VD: PerVmDevices<H>> VMInner<H, PD, VD> {
