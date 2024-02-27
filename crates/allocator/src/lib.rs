@@ -32,9 +32,9 @@ mod tlsf;
 pub use tlsf::TlsfByteAllocator;
 
 #[cfg(feature = "new")]
-mod linked_list;
+mod talc;
 #[cfg(feature = "new")]
-pub use linked_list::LinkedListByteAllocator;
+pub use talc::TalcByteAllocator;
 
 use core::alloc::Layout;
 use core::ptr::NonNull;
