@@ -28,9 +28,11 @@ cfg_if::cfg_if! {
         use allocator::SlabByteAllocator as DefaultByteAllocator;
     } else if #[cfg(feature = "buddy")] {
         use allocator::BuddyByteAllocator as DefaultByteAllocator;
+    } else if #[cfg(feature = "new")] {
+        use allocator::TalcByteAllocator as DefaultByteAllocator;
     } else if #[cfg(feature = "tlsf")] {
         use allocator::TlsfByteAllocator as DefaultByteAllocator;
-    }
+    } 
 }
 
 /// The global allocator used by ArceOS.
@@ -65,6 +67,8 @@ impl GlobalAllocator {
                 "slab"
             } else if #[cfg(feature = "buddy")] {
                 "buddy"
+            } else if #[cfg(feature = "new")] {
+                "TAlc"
             } else if #[cfg(feature = "tlsf")] {
                 "TLSF"
             }
@@ -209,12 +213,14 @@ pub fn global_allocator() -> &'static GlobalAllocator {
 ///
 /// This function should be called only once, and before any allocation.
 pub fn global_init(start_vaddr: usize, size: usize) {
-    debug!(
+    info!(
         "initialize global allocator at: [{:#x}, {:#x})",
         start_vaddr,
         start_vaddr + size
     );
     GLOBAL_ALLOCATOR.init(start_vaddr, size);
+
+    info!("Global allocator {} init ok", GLOBAL_ALLOCATOR.name());
 }
 
 /// Add the given memory region to the global allocator.
