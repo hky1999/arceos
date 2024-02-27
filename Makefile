@@ -53,6 +53,8 @@ NET_DEV ?= user
 VFIO_PCI ?=
 VHOST ?= n
 
+HV ?= n
+
 # Network options
 IP ?= 10.0.2.15
 GW ?= 10.0.2.2
@@ -152,6 +154,15 @@ else ifeq ($(PLATFORM_NAME), aarch64-bsta1000b)
 endif
 
 build: $(OUT_DIR) $(OUT_BIN)
+
+ifeq ($(PLATFORM_NAME), x86_64-linux)
+include scripts/vmm/scp.mk
+endif
+
+
+.PHONY: vmm_scp
+vmm_scp: $(OUT_DIR) $(OUT_BIN)
+  $(call vmm_scp)
 
 disasm:
 	$(OBJDUMP) $(OUT_ELF) | less
