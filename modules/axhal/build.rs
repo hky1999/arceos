@@ -20,7 +20,11 @@ fn gen_linker_script(arch: &str, platform: &str) -> Result<()> {
     } else {
         arch
     };
-    let ld_content = std::fs::read_to_string("linker.lds.S")?;
+    let ld_content = if platform == "x86_64-linux" {
+        std::fs::read_to_string("linker_hv.lds.S")
+    } else {
+        std::fs::read_to_string("linker.lds.S")
+    }?;
     let ld_content = ld_content.replace("%ARCH%", output_arch);
     let ld_content = ld_content.replace(
         "%KERNEL_BASE%",
