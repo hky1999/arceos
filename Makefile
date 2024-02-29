@@ -140,6 +140,7 @@ APP_NAME := $(shell basename $(APP))
 LD_SCRIPT := $(CURDIR)/modules/axhal/linker_$(PLATFORM_NAME).lds
 OUT_ELF := $(OUT_DIR)/$(APP_NAME)_$(PLATFORM_NAME).elf
 OUT_BIN := $(OUT_DIR)/$(APP_NAME)_$(PLATFORM_NAME).bin
+OUT_ASM := $(OUT_DIR)/$(APP_NAME)_$(PLATFORM_NAME).asm
 
 all: build
 

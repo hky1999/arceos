@@ -22,6 +22,8 @@ pub fn start_secondary_cpus(primary_cpu_id: usize) {
             while ENTERED_CPUS.load(Ordering::Acquire) <= logic_cpu_id {
                 core::hint::spin_loop();
             }
+            debug!("starting CPU {} success!!!", i);
+
         }
     }
 }

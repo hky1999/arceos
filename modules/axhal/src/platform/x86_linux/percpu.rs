@@ -17,6 +17,7 @@ pub enum CpuState {
     HvEnabled,
 }
 
+// Todo: this can be placed into per_cpu.
 #[repr(C, align(4096))]
 pub struct PerCpu {
     /// Referenced by arch::cpu::thread_pointer() for x86_64.

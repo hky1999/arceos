@@ -1,17 +1,18 @@
 mod apic;
-
+mod dtables;
 mod entry;
-
-mod percpu;
-
-mod config;
-mod consts;
-mod header;
 mod uart16550;
 
 pub mod mem;
 pub mod misc;
 pub mod time;
+
+// mods for vmm usage.
+mod percpu;
+
+mod config;
+mod consts;
+mod header;
 
 #[cfg(feature = "smp")]
 pub mod mp;
@@ -32,7 +33,8 @@ use config::HvSystemConfig;
 use header::HvHeader;
 use percpu::PerCpu;
 
-static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
+static LINUX_INIT_OK: AtomicU32 = AtomicU32::new(0);
+static ARCEOS_MAIN_INIT_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
 
@@ -59,7 +61,20 @@ extern "C" {
     fn rust_main_secondary(cpu_id: usize) -> !;
 }
 
-fn primary_init_early() {
+fn current_cpu_id() -> usize {
+    match raw_cpuid::CpuId::new().get_feature_info() {
+        Some(finfo) => finfo.initial_local_apic_id() as usize,
+        None => 0,
+    }
+}
+
+fn linux_init_early() {
+    crate::mem::clear_bss();
+    crate::cpu::init_secondary(current_cpu_id());
+    self::uart16550::init();
+    // self::dtables::init_primary();
+    // self::time::init_early();
+
     let system_config = HvSystemConfig::get();
 
     axlog::ax_println!(
@@ -71,7 +86,20 @@ fn primary_init_early() {
         core::str::from_utf8(&system_config.signature),
         system_config.revision,
     );
-    INIT_EARLY_OK.store(1, Ordering::Release);
+    LINUX_INIT_OK.store(1, Ordering::Release);
+}
+
+fn primary_init_early() {
+    let cpu_id = current_cpu_id();
+    axlog::ax_println!("ARCEOS CPU {} primary_init_early()", cpu_id);
+    crate::cpu::init_primary(cpu_id);
+}
+
+fn secondary_init_early() {
+    let cpu_id = current_cpu_id();
+    axlog::ax_println!("ARCEOS CPU {} secondary_init_early()", cpu_id);
+    crate::cpu::init_secondary(cpu_id);
+    // self::dtables::init_secondary();
 }
 
 extern "sysv64" fn vm_cpu_entry(cpu_data: &mut PerCpu, linux_sp: usize) -> i32 {
@@ -85,15 +113,13 @@ extern "sysv64" fn vm_cpu_entry(cpu_data: &mut PerCpu, linux_sp: usize) -> i32 {
     wait_for(|| PerCpu::entered_cpus() < vm_cpus);
 
     if is_linux {
-        axlog::ax_println!(
-            "{} CPU {} entered.",
-            "Linux",
-            cpu_data.id
-        );
-        primary_init_early();
-    } else {
-        wait_for_counter(&INIT_EARLY_OK, 1);
+        axlog::ax_println!("{} CPU {} entered.", "Linux", cpu_data.id);
+        linux_init_early();
 
+        axlog::ax_println!("{} CPU {} init ok.", "Linux", cpu_data.id);
+
+    } else {
+        wait_for_counter(&LINUX_INIT_OK, 1);
         axlog::ax_println!(
             "{} CPU {} entered.",
             if is_primary { "Primary" } else { "Secondary" },
@@ -101,18 +127,21 @@ extern "sysv64" fn vm_cpu_entry(cpu_data: &mut PerCpu, linux_sp: usize) -> i32 {
         );
 
         if is_primary {
+            primary_init_early();
             unsafe {
                 rust_main(cpu_data.id as usize, 0);
             }
         } else {
-            // unsafe {
-            //     rust_main_secondary(cpu_data.id as usize);
-            // }
+            wait_for_counter(&ARCEOS_MAIN_INIT_OK, 1);
+            secondary_init_early();
+            unsafe {
+                rust_main_secondary(cpu_data.id as usize);
+            }
         }
     }
 
     let code = 0;
-    axlog::info!(
+    axlog::ax_println!(
         "CPU {} return back to driver with code {}.",
         cpu_data.id,
         code
