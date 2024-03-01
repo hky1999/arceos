@@ -33,7 +33,7 @@ use config::HvSystemConfig;
 use header::HvHeader;
 use percpu::PerCpu;
 
-static LINUX_INIT_OK: AtomicU32 = AtomicU32::new(0);
+static VMM_PRIMARY_INIT_OK: AtomicU32 = AtomicU32::new(0);
 static ARCEOS_MAIN_INIT_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
@@ -68,12 +68,14 @@ fn current_cpu_id() -> usize {
     }
 }
 
-fn linux_init_early() {
+fn vmm_primary_init_early() {
     crate::mem::clear_bss();
     crate::cpu::init_secondary(current_cpu_id());
     self::uart16550::init();
     // self::dtables::init_primary();
     // self::time::init_early();
+
+    axlog::ax_println!("HvHeader\n{:#?}", HvHeader::get());
 
     let system_config = HvSystemConfig::get();
 
@@ -86,7 +88,7 @@ fn linux_init_early() {
         core::str::from_utf8(&system_config.signature),
         system_config.revision,
     );
-    LINUX_INIT_OK.store(1, Ordering::Release);
+    VMM_PRIMARY_INIT_OK.store(1, Ordering::Release);
 }
 
 fn primary_init_early() {
@@ -105,39 +107,18 @@ fn secondary_init_early() {
 extern "sysv64" fn vm_cpu_entry(cpu_data: &mut PerCpu, linux_sp: usize) -> i32 {
     // Currently we set core 0 as Linux.
     let is_linux = cpu_data.id == 0;
-    // Currently we set core 1 as main core for arceos.
-    let is_primary = cpu_data.id == 1;
 
-    let vm_cpus = HvHeader::get().vm_cpus();
+    let vm_cpus = HvHeader::get().reserved_cpus();
 
     wait_for(|| PerCpu::entered_cpus() < vm_cpus);
 
+    // First, we init primary core for VMM.
     if is_linux {
         axlog::ax_println!("{} CPU {} entered.", "Linux", cpu_data.id);
-        linux_init_early();
-
+        vmm_primary_init_early();
         axlog::ax_println!("{} CPU {} init ok.", "Linux", cpu_data.id);
-
     } else {
-        wait_for_counter(&LINUX_INIT_OK, 1);
-        axlog::ax_println!(
-            "{} CPU {} entered.",
-            if is_primary { "Primary" } else { "Secondary" },
-            cpu_data.id
-        );
-
-        if is_primary {
-            primary_init_early();
-            unsafe {
-                rust_main(cpu_data.id as usize, 0);
-            }
-        } else {
-            wait_for_counter(&ARCEOS_MAIN_INIT_OK, 1);
-            secondary_init_early();
-            unsafe {
-                rust_main_secondary(cpu_data.id as usize);
-            }
-        }
+        wait_for_counter(&VMM_PRIMARY_INIT_OK, 1);
     }
 
     let code = 0;

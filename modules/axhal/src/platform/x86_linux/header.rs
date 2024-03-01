@@ -10,8 +10,11 @@ pub struct HvHeader {
     pub core_size: usize,
     pub percpu_size: usize,
     pub entry: usize,
+    /// Available CPU numbers provided by current physical platform.
     pub max_cpus: u32,
-    pub rt_cpus: u32,
+    /// CPU numbers reserved for ArceOS.
+    /// The Rest of Available CPUs will be reserved for host Linux.
+    pub arceos_cpus: u32,
 }
 
 impl HvHeader {
@@ -19,13 +22,13 @@ impl HvHeader {
         unsafe { &*HV_HEADER_PTR }
     }
 
-    pub fn vm_cpus(&self) -> u32 {
-        if self.rt_cpus < self.max_cpus {
-            self.max_cpus - self.rt_cpus
+    pub fn reserved_cpus(&self) -> u32 {
+        if self.arceos_cpus < self.max_cpus {
+            self.max_cpus - self.arceos_cpus
         } else {
             warn!(
-                "Invalid HvHeader: rt_cpus ({}) >= max_cpus ({})",
-                self.rt_cpus, self.max_cpus
+                "Invalid HvHeader: arceos_cpus ({}) >= max_cpus ({})",
+                self.arceos_cpus, self.max_cpus
             );
             self.max_cpus
         }
@@ -66,8 +69,8 @@ impl Debug for HvHeader {
             .field("percpu_size", &self.percpu_size)
             .field("entry", &self.entry)
             .field("max_cpus", &self.max_cpus)
-            .field("rt_cpus", &self.rt_cpus)
-            .field("vm_cpus", &self.vm_cpus())
+            .field("arceos_cpus", &self.arceos_cpus)
+            .field("reserved_cpus", &self.reserved_cpus())
             .finish()
     }
 }
