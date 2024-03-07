@@ -104,7 +104,7 @@ fn secondary_init_early() {
     // self::dtables::init_secondary();
 }
 
-extern "sysv64" fn vm_cpu_entry(cpu_data: &mut PerCpu, linux_sp: usize) -> i32 {
+extern "sysv64" fn vm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32 {
     // Currently we set core 0 as Linux.
     let is_linux = cpu_data.id == 0;
 
