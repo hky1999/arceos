@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 // use crate::arch::{cpu, ArchPerCpu, LinuxContext};
 // use crate::cell::Cell;
 use super::consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
+use super::current_cpu_id;
 // use crate::error::HvResult;
 use super::header::HvHeader;
 
@@ -40,10 +41,13 @@ impl PerCpu {
         let cpu_id = ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
         let ret = unsafe { Self::from_id_mut(cpu_id) };
         let vaddr = ret as *const _ as usize;
+
+        // axlog::ax_println!("PerCPU [{}] at {:#x} stack_top at {:#x}", cpu_id, vaddr, ret.stack_top());
+
         ret.id = cpu_id;
         ret.self_vaddr = vaddr;
 
-        unsafe { crate::arch::write_thread_pointer(vaddr.into()) };
+        // unsafe { crate::arch::write_thread_pointer(vaddr.into()) };
         ret
     }
 

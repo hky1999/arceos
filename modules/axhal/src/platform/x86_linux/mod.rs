@@ -101,37 +101,48 @@ fn secondary_init_early() {
 }
 
 extern "sysv64" fn vm_cpu_entry(cpu_data: &mut PerCpu, linux_sp: usize) -> i32 {
+    axlog::ax_println!(
+        "CPU {} return back to driver with code {}.",
+        cpu_data.id,
+        0
+    );
+    return 0;
+
     let is_primary = cpu_data.id == 0;
     let online_cpus = HvHeader::get().online_cpus;
+
+    let cpu_id = current_cpu_id();
 
     wait_for(|| PerCpu::entered_cpus() < online_cpus);
 
     if is_primary {
         axlog::ax_println!(
-            "{} CPU {} entered.\n header {:#?}",
+            "{} CPU {}[{}] entered.\n header {:#?}",
             "Linux",
             cpu_data.id,
+            cpu_id,
             HvHeader::get()
         );
         primary_init_early();
-        unsafe {
-            rust_main(cpu_data.id as usize, 0);
-        }
+        // unsafe {
+        //     rust_main(cpu_data.id as usize, 0);
+        // }
     } else {
-        wait_for_counter(&ARCEOS_MAIN_INIT_OK, 1);
+        wait_for_counter(&PRIMARY_INIT_OK, 1);
         axlog::ax_println!(
-            "{} CPU {} entered.",
+            "{} CPU {}[{}] entered.",
             if is_primary { "Primary" } else { "Secondary" },
-            cpu_data.id
+            cpu_data.id,
+            cpu_id,
         );
         secondary_init_early();
-        unsafe {
-            rust_main_secondary(cpu_data.id as usize);
-        }
+        // unsafe {
+        //     rust_main_secondary(cpu_data.id as usize);
+        // }
     }
 
     let code = 0;
-    axlog::info!(
+    axlog::ax_println!(
         "CPU {} return back to driver with code {}.",
         cpu_data.id,
         code
