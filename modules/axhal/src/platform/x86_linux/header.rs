@@ -2,7 +2,7 @@ use core::fmt::{Debug, Formatter, Result};
 
 use super::consts::{HV_HEADER_PTR, PER_CPU_SIZE};
 
-const HEADER_SIGNATURE: [u8; 8] = *b"ARCEOSIM";
+const HEADER_SIGNATURE: [u8; 8] = *b"RVMIMAGE";
 
 #[repr(C)]
 pub struct HvHeader {

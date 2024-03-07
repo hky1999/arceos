@@ -3,7 +3,7 @@ use core::{mem::size_of, slice};
 
 use crate::mem::MemRegionFlags;
 
-const CONFIG_SIGNATURE: [u8; 6] = *b"ARCEOS";
+const CONFIG_SIGNATURE: [u8; 6] = *b"RVMSYS";
 const CONFIG_REVISION: u16 = 13;
 
 const HV_CELL_NAME_MAXLEN: usize = 31;
