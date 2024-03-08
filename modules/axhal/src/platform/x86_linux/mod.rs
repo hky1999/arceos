@@ -121,6 +121,11 @@ extern "sysv64" fn vm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32 
         wait_for_counter(&VMM_PRIMARY_INIT_OK, 1);
     }
 
+    if is_linux {
+        #[cfg(feature = "smp")]
+        mp::start_arceos_cpus();
+    }
+
     let code = 0;
     axlog::ax_println!(
         "CPU {} return back to driver with code {}.",

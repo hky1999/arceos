@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 // use crate::arch::{cpu, ArchPerCpu, LinuxContext};
 // use crate::cell::Cell;
 use super::consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
+use super::current_cpu_id;
 // use crate::error::HvResult;
 use super::header::HvHeader;
 
@@ -17,12 +18,14 @@ pub enum CpuState {
     HvEnabled,
 }
 
+static mut BOOTED_CPU_APIC_ID: [u32; 255] = [u32::MAX; 255];
+
 // Todo: this can be placed into per_cpu.
 #[repr(C, align(4096))]
 pub struct PerCpu {
     /// Referenced by arch::cpu::thread_pointer() for x86_64.
     self_vaddr: usize,
-
+    /// Current CPU's apic id, read from raw_cpuid.
     pub id: u32,
     pub state: CpuState,
     // pub vcpu: Vcpu,
@@ -37,13 +40,19 @@ impl PerCpu {
             panic!("enter cpus exceed {}", HvHeader::get().max_cpus);
         }
 
-        let cpu_id = ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
-        let ret = unsafe { Self::from_id_mut(cpu_id) };
+        let cpu_sequence = ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
+        let cpu_id = current_cpu_id();
+
+        unsafe {
+            BOOTED_CPU_APIC_ID[cpu_id] = cpu_sequence;
+        }
+
+        let ret = unsafe { Self::from_id_mut(cpu_id as u32) };
         let vaddr = ret as *const _ as usize;
-        ret.id = cpu_id;
+        ret.id = cpu_id as u32;
         ret.self_vaddr = vaddr;
 
-        unsafe { crate::arch::write_thread_pointer(vaddr.into()) };
+        // unsafe { crate::arch::write_thread_pointer(vaddr.into()) };
         ret
     }
 
@@ -70,6 +79,12 @@ impl PerCpu {
 
     pub fn activated_cpus() -> u32 {
         ACTIVATED_CPUS.load(Ordering::Acquire)
+    }
+
+    pub fn cpu_is_booted(apic_id: usize) -> bool {
+        unsafe {
+            BOOTED_CPU_APIC_ID[apic_id] != u32::MAX
+        }
     }
 
     // pub fn init(&mut self, linux_sp: usize, cell: &Cell) -> HvResult {
