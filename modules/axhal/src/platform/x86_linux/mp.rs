@@ -14,7 +14,11 @@ const START_PAGE_PADDR: PhysAddr = PhysAddr::from(START_PAGE_IDX as usize * PAGE
 pub fn start_secondary_cpu(_apic_id: usize, _stack_top: crate::mem::PhysAddr) {
     // No need
     // This step is completed by Linux.
-    super::ARCEOS_MAIN_INIT_OK.store(1, Ordering::Release);
+    // super::ARCEOS_MAIN_INIT_OK.store(1, Ordering::Release);
+}
+
+pub fn continue_secondary_cpus() {
+    super::VMM_MAIN_INIT_OK.store(1, Ordering::Release);
 }
 
 core::arch::global_asm!(

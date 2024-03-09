@@ -11,6 +11,8 @@ SECTIONS
     .header		: {
 		__header_start = .;
 		KEEP(*(.header))
+        . = ALIGN(4K);
+        __header_end = .;
 	}
 
     .text : ALIGN(4K) {

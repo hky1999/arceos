@@ -12,15 +12,16 @@ unsafe extern "sysv64" fn switch_stack(linux_sp: usize) -> i32 {
         push rcx
         call {entry}
         pop rsp",
-        entry = sym super::vm_cpu_entry,
+        entry = sym super::vmm_cpu_entry,
         linux_tp = in(reg) linux_tp,
         hv_sp = in(reg) hv_sp,
         in("rdi") cpu_data,
         in("rsi") linux_sp,
+        in("rdx") linux_tp,
         lateout("rax") ret,
         out("rcx") _,
     );
-    x86::msr::wrmsr(x86::msr::IA32_GS_BASE, linux_tp as u64);
+    // x86::msr::wrmsr(x86::msr::IA32_GS_BASE, linux_tp);
     ret
 }
 

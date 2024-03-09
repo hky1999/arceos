@@ -77,7 +77,7 @@ impl HvSystemConfig {
 
     pub fn check(&self) {
         assert_eq!(self.signature, CONFIG_SIGNATURE);
-        // assert_eq!(self.revision, CONFIG_REVISION);
+        assert_eq!(self.revision, CONFIG_REVISION);
     }
 }
 

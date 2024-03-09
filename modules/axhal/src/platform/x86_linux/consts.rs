@@ -10,7 +10,7 @@ pub const HV_HEAP_SIZE: usize = 32 * 1024 * 1024; // 32 MB
 pub const PER_CPU_SIZE: usize = 512 * 1024; // 512 KB
 
 /// Start virtual address of the hypervisor memory.
-pub const HV_BASE: usize = 0xffff_ff80_0020_0000;
+pub const HV_BASE: usize = 0xffff_ff00_0000_0000;
 
 /// Pointer of the `HvHeader` structure.
 pub const HV_HEADER_PTR: *const HvHeader = __header_start as _;

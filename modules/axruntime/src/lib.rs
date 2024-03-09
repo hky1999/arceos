@@ -32,6 +32,10 @@ mod mp;
 #[cfg(feature = "smp")]
 pub use self::mp::rust_main_secondary;
 
+mod vmm;
+
+pub use self::vmm::{rust_vmm_main, rust_vmm_main_secondary};
+
 const LOGO: &str = r#"
        d8888                            .d88888b.   .d8888b.
       d88888                           d88P" "Y88b d88P  Y88b

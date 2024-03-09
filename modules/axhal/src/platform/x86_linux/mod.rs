@@ -28,13 +28,15 @@ pub mod console {
 
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
+use axlog::ax_println as println;
+
 use config::HvSystemConfig;
 // use error::HvResult;
 use header::HvHeader;
 use percpu::PerCpu;
 
 static VMM_PRIMARY_INIT_OK: AtomicU32 = AtomicU32::new(0);
-static ARCEOS_MAIN_INIT_OK: AtomicU32 = AtomicU32::new(0);
+static VMM_MAIN_INIT_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
 
@@ -47,7 +49,7 @@ fn wait_for(condition: impl Fn() -> bool) {
         core::hint::spin_loop();
     }
     if has_err() {
-        axlog::ax_println!("[Error] Other cpu init failed!")
+        println!("[Error] Other cpu init failed!")
     }
 }
 
@@ -56,9 +58,9 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
 }
 
 extern "C" {
-    fn rust_main(cpu_id: usize, dtb: usize) -> !;
+    fn rust_vmm_main(cpu_id: usize);
     #[cfg(feature = "smp")]
-    fn rust_main_secondary(cpu_id: usize) -> !;
+    fn rust_vmm_main_secondary(cpu_id: usize);
 }
 
 fn current_cpu_id() -> usize {
@@ -68,70 +70,80 @@ fn current_cpu_id() -> usize {
     }
 }
 
-fn vmm_primary_init_early() {
+fn vmm_primary_init_early(cpu_id: usize) {
     crate::mem::clear_bss();
-    crate::cpu::init_secondary(current_cpu_id());
-    self::uart16550::init();
+    // crate::cpu::init_secondary(current_cpu_id());
+    // self::uart16550::init();
     // self::dtables::init_primary();
     // self::time::init_early();
 
-    axlog::ax_println!("HvHeader\n{:#?}", HvHeader::get());
+    println!("HvHeader\n{:#?}", HvHeader::get());
 
     let system_config = HvSystemConfig::get();
 
-    axlog::ax_println!(
+    println!(
         "\n\
-        Initializing hypervisor...\n\
+        Initializing hypervisor on Core [{}]...\n\
         config_signature = {:?}\n\
         config_revision = {}\n\
         ",
+        cpu_id,
         core::str::from_utf8(&system_config.signature),
         system_config.revision,
     );
+
     VMM_PRIMARY_INIT_OK.store(1, Ordering::Release);
+
+    unsafe {
+        rust_vmm_main(cpu_id);
+    }
 }
 
-fn primary_init_early() {
-    let cpu_id = current_cpu_id();
-    axlog::ax_println!("ARCEOS CPU {} primary_init_early()", cpu_id);
-    crate::cpu::init_primary(cpu_id);
-}
-
-fn secondary_init_early() {
-    let cpu_id = current_cpu_id();
-    axlog::ax_println!("ARCEOS CPU {} secondary_init_early()", cpu_id);
-    crate::cpu::init_secondary(cpu_id);
+fn vmm_secondary_init_early(cpu_id: usize) {
+    println!("ARCEOS CPU {} secondary_init_early()", cpu_id);
+    // crate::cpu::init_secondary(cpu_id);
     // self::dtables::init_secondary();
+    unsafe {
+        rust_vmm_main_secondary(cpu_id);
+    }
 }
 
-extern "sysv64" fn vm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32 {
+extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize, linux_tp: usize) -> i32 {
     // Currently we set core 0 as Linux.
-    let is_linux = cpu_data.id == 0;
+    let is_primary = cpu_data.id == 0;
 
     let vm_cpus = HvHeader::get().reserved_cpus();
 
     wait_for(|| PerCpu::entered_cpus() < vm_cpus);
 
+    println!(
+        "{} CPU {} entered.",
+        if is_primary { "Primary" } else { "Secondary" },
+        cpu_data.id
+    );
+
     // First, we init primary core for VMM.
-    if is_linux {
-        axlog::ax_println!("{} CPU {} entered.", "Linux", cpu_data.id);
-        vmm_primary_init_early();
-        axlog::ax_println!("{} CPU {} init ok.", "Linux", cpu_data.id);
+    if is_primary {
+        vmm_primary_init_early(cpu_data.id as usize);
     } else {
         wait_for_counter(&VMM_PRIMARY_INIT_OK, 1);
+
+        wait_for_counter(&VMM_MAIN_INIT_OK, 1);
+
+        vmm_secondary_init_early(cpu_data.id as usize);
     }
 
-    if is_linux {
-        #[cfg(feature = "smp")]
-        mp::start_arceos_cpus();
+    unsafe {
+        x86::msr::wrmsr(x86::msr::IA32_GS_BASE, linux_tp as u64);
     }
 
     let code = 0;
-    axlog::ax_println!(
-        "CPU {} return back to driver with code {}.",
-        cpu_data.id,
-        code
-    );
+    // println!(
+    //     "{} CPU {} return back to driver with code {}.",
+    //     if is_primary { "Primary" } else { "Secondary" },
+    //     cpu_data.id,
+    //     code
+    // );
     code
 }
 
