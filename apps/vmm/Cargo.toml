@@ -7,4 +7,4 @@ authors = ["hky1999 <976929993@qq.com>"]
 
 [dependencies]
 # axstd = { path = "../../ulib/axstd", features = ["multitask", "irq"], optional = true }
-axstd = { path = "../../ulib/axstd", features = ["multitask", "irq"], optional = true }
+axstd = { path = "../../ulib/axstd", features = ["multitask", "irq", "paging"], optional = true }

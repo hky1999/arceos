@@ -26,6 +26,8 @@ pub mod console {
     pub use super::uart16550::*;
 }
 
+pub use mem::host_memory_regions;
+
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
 use axlog::ax_println as println;
@@ -72,7 +74,7 @@ fn current_cpu_id() -> usize {
 
 fn vmm_primary_init_early(cpu_id: usize) {
     crate::mem::clear_bss();
-    // crate::cpu::init_secondary(current_cpu_id());
+    // crate::cpu::init_primary(cpu_id);
     // self::uart16550::init();
     // self::dtables::init_primary();
     // self::time::init_early();
@@ -112,9 +114,9 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize, linux_
     // Currently we set core 0 as Linux.
     let is_primary = cpu_data.id == 0;
 
-    let vm_cpus = HvHeader::get().reserved_cpus();
+    // let vm_cpus = HvHeader::get().reserved_cpus();
 
-    wait_for(|| PerCpu::entered_cpus() < vm_cpus);
+    // wait_for(|| PerCpu::entered_cpus() < vm_cpus);
 
     println!(
         "{} CPU {} entered.",
@@ -138,12 +140,12 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize, linux_
     }
 
     let code = 0;
-    // println!(
-    //     "{} CPU {} return back to driver with code {}.",
-    //     if is_primary { "Primary" } else { "Secondary" },
-    //     cpu_data.id,
-    //     code
-    // );
+    println!(
+        "{} CPU {} return back to driver with code {}.",
+        if is_primary { "Primary" } else { "Secondary" },
+        cpu_data.id,
+        code
+    );
     code
 }
 

@@ -14,6 +14,8 @@ bitflags::bitflags! {
         const WRITE         = 1 << 1;
         /// Executable.
         const EXECUTE       = 1 << 2;
+        /// DMA.
+        const DMA           = 1 << 3;
         /// Device memory. (e.g., MMIO regions)
         const DEVICE        = 1 << 4;
         /// Uncachable memory. (e.g., framebuffer)

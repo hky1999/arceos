@@ -1,8 +1,6 @@
 use core::fmt::{Debug, Formatter, Result};
 use core::{mem::size_of, slice};
 
-use crate::mem::MemRegionFlags;
-
 const CONFIG_SIGNATURE: [u8; 6] = *b"ARCEOS";
 const CONFIG_REVISION: u16 = 13;
 
@@ -94,7 +92,7 @@ impl<'a> CellConfig<'a> {
         self.desc.config_size()
     }
 
-    pub fn mem_regions(&self) -> &[HvMemoryRegion] {
+    pub fn mem_regions(&self) -> &'static [HvMemoryRegion] {
         // XXX: data may unaligned, which cause panic on debug mode. Same below.
         // See: https://doc.rust-lang.org/src/core/slice/mod.rs.html#6435-6443
         unsafe {
@@ -114,7 +112,7 @@ impl Debug for CellConfig<'_> {
         f.debug_struct("CellConfig")
             .field("name", &core::str::from_utf8(&name[..len]))
             .field("size", &self.size())
-            .field("mem_regions", &self.mem_regions())
+            .field("mem regions", &self.mem_regions())
             .finish()
     }
 }
