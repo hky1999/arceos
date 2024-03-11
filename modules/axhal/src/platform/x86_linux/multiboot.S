@@ -3,11 +3,11 @@
 
 .section .text.boot
 .code32
-.global _start
-_start:
-    mov     edi, eax        # arg1: magic: 0x2BADB002
-    mov     esi, ebx        # arg2: multiboot info
-    jmp     bsp_entry32
+# .global _start
+# _start:
+#     mov     edi, eax        # arg1: magic: 0x2BADB002
+#     mov     esi, ebx        # arg2: multiboot info
+#     jmp     bsp_entry32
 
 .balign 4
 .type multiboot_header, STT_OBJECT

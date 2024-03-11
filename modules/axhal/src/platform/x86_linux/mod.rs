@@ -1,4 +1,6 @@
 mod apic;
+// mod apic_backup;
+mod boot;
 mod dtables;
 mod entry;
 mod uart16550;
@@ -63,6 +65,9 @@ extern "C" {
     fn rust_vmm_main(cpu_id: usize);
     #[cfg(feature = "smp")]
     fn rust_vmm_main_secondary(cpu_id: usize);
+    fn rust_main(cpu_id: usize, dtb: usize) -> !;
+    #[cfg(feature = "smp")]
+    fn rust_main_secondary(cpu_id: usize) -> !;
 }
 
 fn current_cpu_id() -> usize {
@@ -76,7 +81,7 @@ fn vmm_primary_init_early(cpu_id: usize) {
     crate::mem::clear_bss();
     crate::cpu::init_primary(cpu_id);
     // self::uart16550::init();
-    // self::dtables::init_primary();
+    self::dtables::init_primary();
     // self::time::init_early();
 
     println!("HvHeader\n{:#?}", HvHeader::get());
@@ -149,9 +154,31 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize, linux_
     code
 }
 
+unsafe extern "C" fn rust_entry(magic: usize, _mbi: usize) {
+    // TODO: handle multiboot info
+    if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {
+        crate::mem::clear_bss();
+        crate::cpu::init_primary(current_cpu_id());
+        self::uart16550::init();
+        self::dtables::init_primary();
+        self::time::init_early();
+        rust_main(current_cpu_id(), 0);
+    }
+}
+
+#[allow(unused_variables)]
+unsafe extern "C" fn rust_entry_secondary(magic: usize) {
+    #[cfg(feature = "smp")]
+    if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {
+        crate::cpu::init_secondary(current_cpu_id());
+        self::dtables::init_secondary();
+        rust_main_secondary(current_cpu_id());
+    }
+}
+
 /// Initializes the platform devices for the primary CPU.
 pub fn platform_init() {
-    // self::apic::init_primary();
+    self::apic::init();
     // self::time::init_primary();
 }
 

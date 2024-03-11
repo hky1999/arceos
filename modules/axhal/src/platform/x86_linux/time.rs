@@ -29,17 +29,17 @@ pub fn nanos_to_ticks(nanos: u64) -> u64 {
 /// A timer interrupt will be triggered at the given deadline (in nanoseconds).
 #[cfg(feature = "irq")]
 pub fn set_oneshot_timer(deadline_ns: u64) {
-    let lapic = super::apic::local_apic();
-    let now_ns = crate::time::current_time_nanos();
-    unsafe {
-        if now_ns < deadline_ns {
-            let apic_ticks = NANOS_TO_LAPIC_TICKS_RATIO.mul_trunc(deadline_ns - now_ns);
-            assert!(apic_ticks <= u32::MAX as u64);
-            lapic.set_timer_initial(apic_ticks.max(1) as u32);
-        } else {
-            lapic.set_timer_initial(1);
-        }
-    }
+    // let lapic = super::apic::local_apic();
+    // let now_ns = crate::time::current_time_nanos();
+    // unsafe {
+    //     if now_ns < deadline_ns {
+    //         let apic_ticks = NANOS_TO_LAPIC_TICKS_RATIO.mul_trunc(deadline_ns - now_ns);
+    //         assert!(apic_ticks <= u32::MAX as u64);
+    //         lapic.set_timer_initial(apic_ticks.max(1) as u32);
+    //     } else {
+    //         lapic.set_timer_initial(1);
+    //     }
+    // }
 }
 
 pub(super) fn init_early() {
@@ -57,26 +57,26 @@ pub(super) fn init_early() {
 }
 
 pub(super) fn init_primary() {
-    #[cfg(feature = "irq")]
-    unsafe {
-        use x2apic::lapic::{TimerDivide, TimerMode};
-        let lapic = super::apic::local_apic();
-        lapic.set_timer_mode(TimerMode::OneShot);
-        lapic.set_timer_divide(TimerDivide::Div256); // indeed it is Div1, the name is confusing.
-        lapic.enable_timer();
+    // #[cfg(feature = "irq")]
+    // unsafe {
+    //     use x2apic::lapic::{TimerDivide, TimerMode};
+    //     let lapic = super::apic::local_apic();
+    //     lapic.set_timer_mode(TimerMode::OneShot);
+    //     lapic.set_timer_divide(TimerDivide::Div256); // indeed it is Div1, the name is confusing.
+    //     lapic.enable_timer();
 
-        // TODO: calibrate with HPET
-        NANOS_TO_LAPIC_TICKS_RATIO = ratio::Ratio::new(
-            LAPIC_TICKS_PER_SEC as u32,
-            crate::time::NANOS_PER_SEC as u32,
-        );
-    }
+    //     // TODO: calibrate with HPET
+    //     NANOS_TO_LAPIC_TICKS_RATIO = ratio::Ratio::new(
+    //         LAPIC_TICKS_PER_SEC as u32,
+    //         crate::time::NANOS_PER_SEC as u32,
+    //     );
+    // }
 }
 
 #[cfg(feature = "smp")]
 pub(super) fn init_secondary() {
-    #[cfg(feature = "irq")]
-    unsafe {
-        super::apic::local_apic().enable_timer();
-    }
+    // #[cfg(feature = "irq")]
+    // unsafe {
+    //     super::apic::local_apic().enable_timer();
+    // }
 }
