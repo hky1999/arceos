@@ -69,19 +69,19 @@ pub extern "C" fn rust_vmm_main(cpu_id: usize) {
     super::init_allocator();
 
     info!("Initialize kernel page table...");
-    remap_kernel_memory().expect("remap kernel memory failed");
+    vmm_remap_kernel_memory().expect("remap kernel memory failed");
 
     axhal::mp::continue_secondary_cpus();
 
     info!("VMM Primary CPU {} init OK.", cpu_id);
     super::INITED_CPUS.fetch_add(1, Ordering::Relaxed);
 
-    // while !is_init_ok() {
-    //     core::hint::spin_loop();
-    // }
+    while !is_init_ok() {
+        core::hint::spin_loop();
+    }
 }
 
-fn remap_kernel_memory() -> Result<(), axhal::paging::PagingError> {
+fn vmm_remap_kernel_memory() -> Result<(), axhal::paging::PagingError> {
     use axhal::host_memory_regions;
     use axhal::mem::{memory_regions, phys_to_virt};
     use axhal::paging::PageTable;
@@ -89,28 +89,31 @@ fn remap_kernel_memory() -> Result<(), axhal::paging::PagingError> {
 
     static KERNEL_PAGE_TABLE: LazyInit<PageTable> = LazyInit::new();
 
-    let mut kernel_page_table = PageTable::try_new()?;
-    for r in memory_regions() {
-        kernel_page_table.map_region(
-            phys_to_virt(r.paddr),
-            r.paddr,
-            r.size,
-            r.flags.into(),
-            true,
-        )?;
-    }
+    if axhal::cpu::this_cpu_is_bsp() {
+        info!("BSP CPU init KERNEL_PAGE_TABLE...");
+        let mut kernel_page_table = PageTable::try_new()?;
+        for r in memory_regions() {
+            kernel_page_table.map_region(
+                phys_to_virt(r.paddr),
+                r.paddr,
+                r.size,
+                r.flags.into(),
+                true,
+            )?;
+        }
 
-    for r in host_memory_regions() {
-        kernel_page_table.map_region(
-            phys_to_virt(r.paddr),
-            r.paddr,
-            r.size,
-            r.flags.into(),
-            true,
-        )?;
-    }
+        for r in host_memory_regions() {
+            kernel_page_table.map_region(
+                phys_to_virt(r.paddr),
+                r.paddr,
+                r.size,
+                r.flags.into(),
+                true,
+            )?;
+        }
 
-    KERNEL_PAGE_TABLE.init_by(kernel_page_table);
+        KERNEL_PAGE_TABLE.init_by(kernel_page_table);
+    }
 
     info!("KERNEL_PAGE_TABLE init success");
     loop {}

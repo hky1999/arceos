@@ -74,7 +74,7 @@ fn current_cpu_id() -> usize {
 
 fn vmm_primary_init_early(cpu_id: usize) {
     crate::mem::clear_bss();
-    // crate::cpu::init_primary(cpu_id);
+    crate::cpu::init_primary(cpu_id);
     // self::uart16550::init();
     // self::dtables::init_primary();
     // self::time::init_early();
@@ -114,15 +114,15 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize, linux_
     // Currently we set core 0 as Linux.
     let is_primary = cpu_data.id == 0;
 
-    // let vm_cpus = HvHeader::get().reserved_cpus();
+    let vm_cpus = HvHeader::get().reserved_cpus();
 
-    // wait_for(|| PerCpu::entered_cpus() < vm_cpus);
+    wait_for(|| PerCpu::entered_cpus() < vm_cpus);
 
-    println!(
-        "{} CPU {} entered.",
-        if is_primary { "Primary" } else { "Secondary" },
-        cpu_data.id
-    );
+    // println!(
+    //     "{} CPU {} entered.",
+    //     if is_primary { "Primary" } else { "Secondary" },
+    //     cpu_data.id
+    // );
 
     // First, we init primary core for VMM.
     if is_primary {
