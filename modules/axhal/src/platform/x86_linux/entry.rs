@@ -17,11 +17,11 @@ unsafe extern "sysv64" fn switch_stack(linux_sp: usize) -> i32 {
         hv_sp = in(reg) hv_sp,
         in("rdi") cpu_data,
         in("rsi") linux_sp,
-        in("rdx") linux_tp,
         lateout("rax") ret,
         out("rcx") _,
+        clobber_abi("sysv64"),
     );
-    // x86::msr::wrmsr(x86::msr::IA32_GS_BASE, linux_tp);
+    x86::msr::wrmsr(x86::msr::IA32_GS_BASE, linux_tp);
     ret
 }
 

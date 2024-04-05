@@ -1,11 +1,12 @@
 use x86::apic;
 
-use crate::mem::{phys_to_virt, PhysAddr, PAGE_SIZE_4K};
+use crate::mem::{phys_to_virt, virt_to_phys, PhysAddr, VirtAddr, PAGE_SIZE_4K};
 use crate::time::{busy_wait, Duration};
 use core::sync::atomic::Ordering;
 
 use super::header::HvHeader;
 use super::percpu::PerCpu;
+use axconfig::{SMP, TASK_STACK_SIZE};
 
 const START_PAGE_IDX: u8 = 6;
 const START_PAGE_COUNT: usize = 1;
@@ -26,6 +27,9 @@ core::arch::global_asm!(
    include_str!("ap_start.S"),
    start_page_paddr = const START_PAGE_PADDR.as_usize(),
 );
+
+#[link_section = ".bss.stack"]
+static mut SECONDARY_BOOT_STACK: [[u8; TASK_STACK_SIZE]; SMP] = [[0; TASK_STACK_SIZE]; SMP];
 
 /// Starts the given secondary CPU with its boot stack.
 #[allow(clippy::uninit_assumed_init)]
@@ -54,7 +58,18 @@ pub fn start_arceos_cpus() {
         );
 
         //   start_page[U64_PER_PAGE - 2] = stack_top.as_usize() as u64; // stack_top
-        start_page[U64_PER_PAGE - 1] = ap_entry32 as usize as _; // entry
+        // We need to use physical address here.
+        // Since current physical to virtual address is not identical mapped with offset 0xffff_ff80_0000_0000.
+        let ap_entry_virt = VirtAddr::from(ap_entry32 as usize);
+        let ap_entry_phys = virt_to_phys(ap_entry_virt);
+
+        debug!(
+            "boot ap at {:?}, physical {:?}",
+            ap_entry_virt, ap_entry_phys
+        );
+
+        start_page[U64_PER_PAGE - 1] =
+            virt_to_phys(VirtAddr::from(ap_entry32 as usize)).as_usize() as _; // entry
 
         let max_cpus = super::header::HvHeader::get().max_cpus;
         let mut arceos_cpu_num = 0;
@@ -63,9 +78,13 @@ pub fn start_arceos_cpus() {
             if PerCpu::cpu_is_booted(apic_id as usize) {
                 continue;
             }
-            let stack_top = PerCpu::from_id_mut(apic_id).stack_top();
+            let stack_top = virt_to_phys(VirtAddr::from(unsafe {
+                SECONDARY_BOOT_STACK[apic_id as usize].as_ptr_range().end as usize
+            }))
+            .as_usize();
+
             start_page[U64_PER_PAGE - 2] = stack_top as u64; // stack_top
-            
+
             super::apic::start_ap(apic_id, START_PAGE_IDX);
             arceos_cpu_num += 1;
             // wait for max 100ms

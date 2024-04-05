@@ -115,7 +115,7 @@ fn vmm_secondary_init_early(cpu_id: usize) {
     }
 }
 
-extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize, linux_tp: usize) -> i32 {
+extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32 {
     // Currently we set core 0 as Linux.
     let is_primary = cpu_data.id == 0;
 
@@ -123,11 +123,11 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize, linux_
 
     wait_for(|| PerCpu::entered_cpus() < vm_cpus);
 
-    // println!(
-    //     "{} CPU {} entered.",
-    //     if is_primary { "Primary" } else { "Secondary" },
-    //     cpu_data.id
-    // );
+    println!(
+        "{} CPU {} entered.",
+        if is_primary { "Primary" } else { "Secondary" },
+        cpu_data.id
+    );
 
     // First, we init primary core for VMM.
     if is_primary {
@@ -138,10 +138,6 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize, linux_
         wait_for_counter(&VMM_MAIN_INIT_OK, 1);
 
         vmm_secondary_init_early(cpu_data.id as usize);
-    }
-
-    unsafe {
-        x86::msr::wrmsr(x86::msr::IA32_GS_BASE, linux_tp as u64);
     }
 
     let code = 0;
@@ -168,6 +164,9 @@ unsafe extern "C" fn rust_entry(magic: usize, _mbi: usize) {
 
 #[allow(unused_variables)]
 unsafe extern "C" fn rust_entry_secondary(magic: usize) {
+    loop {}
+    println!("ARCEOS CPU entered.");
+    
     #[cfg(feature = "smp")]
     if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {
         crate::cpu::init_secondary(current_cpu_id());
