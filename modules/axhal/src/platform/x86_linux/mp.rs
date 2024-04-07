@@ -85,7 +85,7 @@ pub fn start_arceos_cpus() {
 
             start_page[U64_PER_PAGE - 2] = stack_top as u64; // stack_top
 
-            super::apic::start_ap(apic_id, START_PAGE_IDX);
+            super::lapic::start_ap(apic_id, START_PAGE_IDX);
             arceos_cpu_num += 1;
             // wait for max 100ms
             busy_wait(Duration::from_millis(100)); // 100ms

@@ -34,6 +34,18 @@ extern "C" {
 pub extern "C" fn rust_arceos_main(cpu_id: usize) {
     info!("ARCEOS CPU {:x} started.", cpu_id);
 
+    info!("Initialize platform devices...");
+    axhal::platform_init();
+
+    #[cfg(feature = "multitask")]
+    axtask::init_scheduler();
+
+    #[cfg(feature = "irq")]
+    {
+        info!("Initialize interrupt handlers...");
+        super::init_interrupt();
+    }
+
     info!("ARCEOS CPU {:x} init OK.", cpu_id);
     super::INITED_CPUS.fetch_add(1, Ordering::Relaxed);
 
@@ -97,8 +109,8 @@ pub extern "C" fn rust_vmm_main(cpu_id: usize) {
     info!("Initialize kernel page table...");
     vmm_remap_kernel_memory().expect("remap kernel memory failed");
 
-    info!("Initialize platform devices...");
-    axhal::platform_init();
+    info!("Initialize VMM platform devices...");
+    axhal::vmm_platform_init();
 
     axhal::mp::start_arceos_cpus();
 
@@ -149,4 +161,3 @@ fn vmm_remap_kernel_memory() -> Result<(), axhal::paging::PagingError> {
     unsafe { axhal::arch::write_page_table_root(KERNEL_PAGE_TABLE.root_paddr()) };
     Ok(())
 }
-

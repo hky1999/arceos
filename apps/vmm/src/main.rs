@@ -13,10 +13,12 @@ use std::time::{Duration, Instant};
 fn main() {
     println!("Hello, main task!");
 
-    // let now = Instant::now();
+    let now = Instant::now();
 
-    // let elapsed = now.elapsed();
-    // println!("main task sleep for {:?}", elapsed);
+    thread::sleep(Duration::from_secs(3));
+
+    let elapsed = now.elapsed();
+    println!("main task sleep for {:?}", elapsed);
 
     loop {
         thread::sleep(Duration::from_secs(1));

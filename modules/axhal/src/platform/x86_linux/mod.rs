@@ -1,4 +1,6 @@
 mod apic;
+// It's a simplied version of LocalApic, just use for sendsipi.
+mod lapic;
 
 mod boot;
 mod dtables;
@@ -21,7 +23,7 @@ pub mod mp;
 
 #[cfg(feature = "irq")]
 pub mod irq {
-    pub use super::apic::*;
+    pub use super::lapic::*;
 }
 
 pub mod console {
@@ -76,9 +78,6 @@ fn current_cpu_id() -> usize {
 fn vmm_primary_init_early(cpu_id: usize) {
     crate::mem::clear_bss();
     crate::cpu::init_primary(cpu_id);
-    // self::uart16550::init();
-    self::dtables::init_primary();
-    // self::time::init_early();
 
     println!("HvHeader\n{:#?}", HvHeader::get());
 
@@ -98,7 +97,9 @@ fn vmm_primary_init_early(cpu_id: usize) {
     VMM_PRIMARY_INIT_OK.store(1, Ordering::Release);
 
     unsafe {
+        let linux_cr3 = x86::controlregs::cr3();
         rust_vmm_main(cpu_id);
+        x86::controlregs::cr3_write(linux_cr3)
     }
 }
 
@@ -164,7 +165,8 @@ unsafe extern "C" fn rust_entry_secondary(magic: usize) {
 
     if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {
         crate::cpu::init_secondary(current_cpu_id());
-        self::dtables::init_secondary();
+        self::dtables::init_primary();
+        self::time::init_early();
         rust_arceos_main(current_cpu_id());
     } else {
         panic!("Something is wrong during booting RT cores...");
@@ -172,14 +174,19 @@ unsafe extern "C" fn rust_entry_secondary(magic: usize) {
 }
 
 /// Initializes the platform devices for the primary CPU.
+pub fn vmm_platform_init() {
+    self::lapic::init();
+}
+
+/// Initializes the platform devices for the primary CPU.
 pub fn platform_init() {
-    self::apic::init();
-    // self::time::init_primary();
+    self::apic::init_primary();
+    self::time::init_primary();
 }
 
 /// Initializes the platform devices for secondary CPUs.
 #[cfg(feature = "smp")]
 pub fn platform_init_secondary() {
-    // self::apic::init_secondary();
-    // self::time::init_secondary();
+    self::apic::init_secondary();
+    self::time::init_secondary();
 }
