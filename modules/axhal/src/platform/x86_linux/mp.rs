@@ -20,7 +20,8 @@ pub fn start_secondary_cpu(_apic_id: usize, _stack_top: crate::mem::PhysAddr) {
 }
 
 pub fn continue_secondary_cpus() {
-    super::VMM_MAIN_INIT_OK.store(1, Ordering::Release);
+    super::VMM_MAIN_INIT_OK.fetch_add(1, Ordering::Release);
+    // super::VMM_MAIN_INIT_OK.store(1, Ordering::Release);
 }
 
 core::arch::global_asm!(

@@ -40,7 +40,7 @@ impl PerCpu {
             panic!("enter cpus exceed {}", HvHeader::get().max_cpus);
         }
 
-        let cpu_sequence = ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
+        let cpu_sequence = ENTERED_CPUS.fetch_add(1, Ordering::Relaxed);
         let cpu_id = current_cpu_id();
 
         unsafe {

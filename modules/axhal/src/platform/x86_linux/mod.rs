@@ -78,14 +78,15 @@ fn current_cpu_id() -> usize {
 fn vmm_primary_init_early(cpu_id: usize) {
     crate::mem::clear_bss();
     crate::cpu::init_primary(cpu_id);
+    self::time::init_early();
 
-    println!("HvHeader\n{:#?}", HvHeader::get());
+    // println!("HvHeader\n{:#?}", HvHeader::get());
 
     let system_config = HvSystemConfig::get();
 
     println!(
         "\n\
-        Initializing hypervisor on Core [{}]...\n\
+        Initializing ARCEOS on Core [{}]...\n\
         config_signature = {:?}\n\
         config_revision = {}\n\
         ",
@@ -104,7 +105,7 @@ fn vmm_primary_init_early(cpu_id: usize) {
 }
 
 fn vmm_secondary_init_early(cpu_id: usize) {
-    println!("ARCEOS CPU {} secondary_init_early()", cpu_id);
+    // println!("ARCEOS CPU {} secondary_init_early()", cpu_id);
     // crate::cpu::init_secondary(cpu_id);
     // self::dtables::init_secondary();
     unsafe {
@@ -120,11 +121,11 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32
 
     wait_for(|| PerCpu::entered_cpus() < vm_cpus);
 
-    println!(
-        "{} CPU {} entered.",
-        if is_primary { "Primary" } else { "Secondary" },
-        cpu_data.id
-    );
+    // println!(
+    //     "{} CPU {} entered.",
+    //     if is_primary { "Primary" } else { "Secondary" },
+    //     cpu_data.id
+    // );
 
     // First, we init primary core for VMM.
     if is_primary {
@@ -138,12 +139,12 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32
     }
 
     let code = 0;
-    println!(
-        "{} CPU {} return back to driver with code {}.",
-        if is_primary { "Primary" } else { "Secondary" },
-        cpu_data.id,
-        code
-    );
+    // println!(
+    //     "{} CPU {} return back to driver with code {}.",
+    //     if is_primary { "Primary" } else { "Secondary" },
+    //     cpu_data.id,
+    //     code
+    // );
     code
 }
 

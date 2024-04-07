@@ -112,11 +112,12 @@ pub extern "C" fn rust_vmm_main(cpu_id: usize) {
     info!("Initialize VMM platform devices...");
     axhal::vmm_platform_init();
 
+    info!("VMM Primary CPU {} init OK.", cpu_id);
+
     axhal::mp::start_arceos_cpus();
 
     axhal::mp::continue_secondary_cpus();
 
-    info!("VMM Primary CPU {} init OK.", cpu_id);
     super::INITED_CPUS.fetch_add(1, Ordering::Relaxed);
 
     while !is_init_ok() {

@@ -1,5 +1,6 @@
 QEMU ?= qemu-system-x86_64
 PORT ?= 6657
+OUT_ELF ?= ../../../apps/vmm/vmm_x86_64-linux.elf
 
 qemu_image := ubuntu-20.04-server-cloudimg-amd64.img
 qemu_args := \
@@ -32,6 +33,12 @@ qemu: $(qemu_image)
 
 qemu_debug: $(qemu_image)
 	$(QEMU) $(qemu_args) -s -S
+
+qemu_gdb:
+	gdb $(OUT_ELF) \
+	  -ex 'target remote localhost:1234' \
+	  -ex 'continue' \
+	  -ex 'disp /16i $$pc'
 
 ssh:
 	ssh -p $(PORT) ubuntu@localhost

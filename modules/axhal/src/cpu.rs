@@ -91,9 +91,6 @@ pub(crate) fn init_primary(cpu_id: usize) {
         CPU_ID.write_current_raw(cpu_id);
         IS_BSP.write_current_raw(true);
     }
-
-    let tp = percpu::get_local_thread_pointer();
-    axlog::ax_println!("tp {:#x} {:#x}", tp, tp - 0xffff_feff_c600_0000);
 }
 
 #[allow(dead_code)]
