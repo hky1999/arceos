@@ -8,3 +8,4 @@ qemu.log
 rusty-tags.vi
 
 *.img
+scripts/vmm/host/user-data

@@ -22,6 +22,30 @@ pub extern "C" fn rust_vmm_main_secondary(cpu_id: usize) {
     }
 }
 
+extern "C" {
+    fn main();
+}
+
+/// The main entry point of the ArceOS runtime for secondary CPUs.
+/// When booting from Linux and set self as VMM!
+///
+/// It is called from the `vmm_cpu_entry` code in [axhal].
+#[no_mangle]
+pub extern "C" fn rust_arceos_main(cpu_id: usize) {
+    info!("ARCEOS CPU {:x} started.", cpu_id);
+
+    info!("ARCEOS CPU {:x} init OK.", cpu_id);
+    super::INITED_CPUS.fetch_add(1, Ordering::Relaxed);
+
+    while !is_init_ok() {
+        core::hint::spin_loop();
+    }
+
+    info!("ARCEOS CPU {:x} enter main ...", cpu_id);
+    unsafe { main() };
+
+    core::hint::spin_loop();
+}
 /// The main entry point of the ArceOS runtime.
 /// When booting from Linux and set self as VMM!
 ///

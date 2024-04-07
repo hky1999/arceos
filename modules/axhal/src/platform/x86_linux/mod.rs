@@ -1,5 +1,5 @@
 mod apic;
-// mod apic_backup;
+
 mod boot;
 mod dtables;
 mod entry;
@@ -27,8 +27,6 @@ pub mod irq {
 pub mod console {
     pub use super::uart16550::*;
 }
-
-pub use mem::host_memory_regions;
 
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
@@ -65,9 +63,7 @@ extern "C" {
     fn rust_vmm_main(cpu_id: usize);
     #[cfg(feature = "smp")]
     fn rust_vmm_main_secondary(cpu_id: usize);
-    fn rust_main(cpu_id: usize, dtb: usize) -> !;
-    #[cfg(feature = "smp")]
-    fn rust_main_secondary(cpu_id: usize) -> !;
+    fn rust_arceos_main(cpu_id: usize) -> !;
 }
 
 fn current_cpu_id() -> usize {
@@ -133,7 +129,7 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32
     if is_primary {
         vmm_primary_init_early(cpu_data.id as usize);
     } else {
-        wait_for_counter(&VMM_PRIMARY_INIT_OK, 1);
+        // wait_for_counter(&VMM_PRIMARY_INIT_OK, 1);
 
         wait_for_counter(&VMM_MAIN_INIT_OK, 1);
 
@@ -150,28 +146,28 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32
     code
 }
 
-unsafe extern "C" fn rust_entry(magic: usize, _mbi: usize) {
+unsafe extern "C" fn rust_entry(_magic: usize, _mbi: usize) {
     // TODO: handle multiboot info
-    if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {
-        crate::mem::clear_bss();
-        crate::cpu::init_primary(current_cpu_id());
-        self::uart16550::init();
-        self::dtables::init_primary();
-        self::time::init_early();
-        rust_main(current_cpu_id(), 0);
-    }
+    // if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {
+    //     crate::mem::clear_bss();
+    //     crate::cpu::init_primary(current_cpu_id());
+    //     self::uart16550::init();
+    //     self::dtables::init_primary();
+    //     self::time::init_early();
+    //     rust_main(current_cpu_id(), 0);
+    // }
 }
 
 #[allow(unused_variables)]
 unsafe extern "C" fn rust_entry_secondary(magic: usize) {
-    println!("ARCEOS CPU entered.");
-    loop {}
-    
-    #[cfg(feature = "smp")]
+    info!("ARCEOS CPU entered on Core {}.", current_cpu_id());
+
     if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {
         crate::cpu::init_secondary(current_cpu_id());
         self::dtables::init_secondary();
-        rust_main_secondary(current_cpu_id());
+        rust_arceos_main(current_cpu_id());
+    } else {
+        panic!("Something is wrong during booting RT cores...");
     }
 }
 
