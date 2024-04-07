@@ -1,4 +1,4 @@
 #cloud-config
-password: 123
+password: guest
 chpasswd: { expire: False }
 ssh_pwauth: True

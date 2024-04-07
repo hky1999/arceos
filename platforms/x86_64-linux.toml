@@ -6,16 +6,16 @@ platform = "x86_64-linux"
 family = "x86-linux"
 
 # Base address of the whole physical memory.
-phys-memory-base = "0x3a00_0000"
+phys-memory-base = "0x4000_0000"
 # Size of the whole physical memory.
 phys-memory-size = "0x800_0000"     # 128M
 # Base physical address of the kernel image.
-kernel-base-paddr = "0x20_0000"
+kernel-base-paddr = "0x4000_0000"
 # Base virtual address of the kernel image.
 kernel-base-vaddr = "0xffff_ff00_0000_0000"
 # Linear mapping offset, for quick conversions between physical and virtual
 # addresses.
-phys-virt-offset = "0xffff_feff_c600_0000" # kernel-base-vaddr - phys-memory-base
+phys-virt-offset = "0xffff_feff_c000_0000" # kernel-base-vaddr - phys-memory-base
 # MMIO regions with format (`base_paddr`, `size`).
 mmio-regions = [
     ["0xb000_0000", "0x1000_0000"], # PCI config space

@@ -164,8 +164,8 @@ unsafe extern "C" fn rust_entry(magic: usize, _mbi: usize) {
 
 #[allow(unused_variables)]
 unsafe extern "C" fn rust_entry_secondary(magic: usize) {
-    loop {}
     println!("ARCEOS CPU entered.");
+    loop {}
     
     #[cfg(feature = "smp")]
     if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {

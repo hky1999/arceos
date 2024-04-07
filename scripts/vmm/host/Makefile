@@ -17,13 +17,15 @@ $(qemu_image):
 image: $(qemu_image)
 	cat >user-data <<EOF
 	#cloud-config
-	password: guest
+	password: 123
 	chpasswd: { expire: False }
 	ssh_pwauth: True
 	EOF
 	cloud-localds user-data.img user-data
 	qemu-img resize $(qemu_image) +64G
 	$(QEMU) $(qemu_args) -drive file=user-data.img,format=raw
+
+# cat ~/.ssh/id_rsa.pub| ssh -p 6657 ubuntu@localhost "cat - >> ~/.ssh/authorized_keys"
 
 qemu: $(qemu_image)
 	$(QEMU) $(qemu_args)

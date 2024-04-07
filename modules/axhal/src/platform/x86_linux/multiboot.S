@@ -97,9 +97,7 @@ ap_entry64:
     # call rust_entry_secondary(magic)
     mov     rdi, {mb_magic}
     movabs  rax, offset {entry_secondary}
-.Lhlt11:
-    hlt
-    jmp     .Lhlt11
+
     call    rax
     jmp     .Lhlt
 
@@ -128,6 +126,8 @@ ap_entry64:
     .quad .Ltmp_pdpt_low - {offset} + 0x3   # PRESENT | WRITABLE | paddr(tmp_pdpt)
     .zero 8 * 509
     # 0xffff_ff00_0000_0000 ~ 0xffff_ff00_ffff_ffff
+    # 0xffff_ff00_0000_0000 ~ 0xffff_ff00_0800_0000
+    # 0x0000_0000_4000_0000 ~ 0x0000_0000_4800_0000
     .quad .Ltmp_pdpt_high - {offset} + 0x3  # PRESENT | WRITABLE | paddr(tmp_pdpt)
     .zero 8 * 1
 
@@ -140,7 +140,7 @@ ap_entry64:
     .zero 8 * 508
 
 .Ltmp_pdpt_high:
-    .quad 0x3a000000 | 0x83         # PRESENT | WRITABLE | HUGE_PAGE | paddr(0x3a000000)
+    .quad 0x40000000 | 0x83       # PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
     # .quad 0x40000000 | 0x83     # PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
     # .quad 0x80000000 | 0x83     # PRESENT | WRITABLE | HUGE_PAGE | paddr(0x8000_0000)
     # .quad 0xc0000000 | 0x83     # PRESENT | WRITABLE | HUGE_PAGE | paddr(0xc000_0000)
