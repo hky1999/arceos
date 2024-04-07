@@ -1,3 +1,8 @@
+/// This is just a simplified LocalApic used for send sipi request to other cores.
+/// Refer to `apic.rs` for detailed implementation for APIC.
+
+// Because `LocalApicBuilder` from `x2apic` can not be used here.
+
 use spin::{Once, RwLock};
 use x86::apic::{x2apic::X2APIC, xapic::XAPIC, ApicControl, ApicId};
 
@@ -7,22 +12,7 @@ use alloc::sync::Arc;
 
 use crate::mem::{phys_to_virt, PhysAddr};
 
-use self::vectors::*;
-
-pub(super) mod vectors {
-    pub const APIC_TIMER_VECTOR: u8 = 0xf0;
-    pub const APIC_SPURIOUS_VECTOR: u8 = 0xf1;
-    pub const APIC_ERROR_VECTOR: u8 = 0xf2;
-}
-
-/// The maximum number of IRQs.
-pub const MAX_IRQ_COUNT: usize = 256;
-
-/// The timer IRQ number.
-pub const TIMER_IRQ_NUM: usize = APIC_TIMER_VECTOR as usize;
-
 const APIC_BASE: PhysAddr = PhysAddr::from(0xFEE0_0000);
-const MAX_APIC_ID: u32 = 254;
 
 bitflags::bitflags! {
     /// IA32_APIC_BASE MSR.
@@ -75,29 +65,12 @@ impl LocalApic {
             Err("Local Apic init failed")
         }
     }
-
-    pub fn id(&self) -> u32 {
-        if self.is_x2apic {
-            self.inner.read().id()
-        } else {
-            self.inner.read().id() >> 24
-        }
-    }
 }
 
 static LOCAL_APIC: Once<LocalApic> = Once::new();
-static mut APIC_TO_CPU_ID: [u32; MAX_APIC_ID as usize + 1] = [u32::MAX; MAX_APIC_ID as usize + 1];
 
 pub(super) fn lapic<'a>() -> &'a LocalApic {
     LOCAL_APIC.get().expect("Uninitialized Local APIC!")
-}
-
-pub(super) fn apic_to_cpu_id(apic_id: u32) -> u32 {
-    if apic_id <= MAX_APIC_ID {
-        unsafe { APIC_TO_CPU_ID[apic_id as usize] }
-    } else {
-        u32::MAX
-    }
 }
 
 pub(super) fn init() {
@@ -135,39 +108,4 @@ pub(super) unsafe fn shutdown_ap(apic_id: u32) {
     };
 
     lapic().inner.write().ipi_init(apic_id);
-}
-
-/// Enables or disables the given IRQ.
-#[cfg(feature = "irq")]
-pub fn set_enable(vector: usize, enabled: bool) {
-    // // should not affect LAPIC interrupts
-    // if vector < APIC_TIMER_VECTOR as _ {
-    //     unsafe {
-    //         if enabled {
-    //             IO_APIC.lock().enable_irq(vector as u8);
-    //         } else {
-    //             IO_APIC.lock().disable_irq(vector as u8);
-    //         }
-    //     }
-    // }
-}
-
-/// Registers an IRQ handler for the given IRQ.
-///
-/// It also enables the IRQ if the registration succeeds. It returns `false` if
-/// the registration failed.
-#[cfg(feature = "irq")]
-pub fn register_handler(vector: usize, handler: crate::irq::IrqHandler) -> bool {
-    crate::irq::register_handler_common(vector, handler)
-}
-
-/// Dispatches the IRQ.
-///
-/// This function is called by the common interrupt handler. It looks
-/// up in the IRQ handler table and calls the corresponding handler. If
-/// necessary, it also acknowledges the interrupt controller after handling.
-#[cfg(feature = "irq")]
-pub fn dispatch_irq(vector: usize) {
-    // crate::irq::dispatch_irq_common(vector);
-    // unsafe { local_apic().end_of_interrupt() };
 }

@@ -94,7 +94,7 @@ ap_entry64:
     mov     rax, {offset}
     add     rsp, rax
 
-    # call rust_entry_secondary(magic)
+    # call rust_entry_from_vmm(magic)
     mov     rdi, {mb_magic}
     movabs  rax, offset {entry_secondary}
 

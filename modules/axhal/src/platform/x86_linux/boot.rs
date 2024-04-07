@@ -39,7 +39,7 @@ global_asm!(
     mb_hdr_magic = const MULTIBOOT_HEADER_MAGIC,
     mb_hdr_flags = const MULTIBOOT_HEADER_FLAGS,
     entry = sym super::rust_entry,
-    entry_secondary = sym super::rust_entry_secondary,
+    entry_secondary = sym super::rust_entry_from_vmm,
 
     offset = const PHYS_VIRT_OFFSET,
     boot_stack_size = const TASK_STACK_SIZE,

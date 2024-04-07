@@ -23,7 +23,7 @@ pub mod mp;
 
 #[cfg(feature = "irq")]
 pub mod irq {
-    pub use super::lapic::*;
+    pub use super::apic::*;
 }
 
 pub mod console {
@@ -160,7 +160,7 @@ unsafe extern "C" fn rust_entry(_magic: usize, _mbi: usize) {
 }
 
 #[allow(unused_variables)]
-unsafe extern "C" fn rust_entry_secondary(magic: usize) {
+unsafe extern "C" fn rust_entry_from_vmm(magic: usize) {
     info!("ARCEOS CPU entered on Core {}.", current_cpu_id());
 
     if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {
