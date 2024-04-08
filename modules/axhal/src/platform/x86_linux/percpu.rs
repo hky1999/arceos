@@ -10,7 +10,7 @@ use super::current_cpu_id;
 use super::header::HvHeader;
 
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
-static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
+// static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum CpuState {
@@ -40,7 +40,7 @@ impl PerCpu {
             panic!("enter cpus exceed {}", HvHeader::get().max_cpus);
         }
 
-        let cpu_sequence = ENTERED_CPUS.fetch_add(1, Ordering::Relaxed);
+        let cpu_sequence = ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
         let cpu_id = current_cpu_id();
 
         unsafe {
@@ -77,14 +77,12 @@ impl PerCpu {
         ENTERED_CPUS.load(Ordering::Acquire)
     }
 
-    pub fn activated_cpus() -> u32 {
-        ACTIVATED_CPUS.load(Ordering::Acquire)
-    }
+    // pub fn activated_cpus() -> u32 {
+    //     ACTIVATED_CPUS.load(Ordering::Acquire)
+    // }
 
     pub fn cpu_is_booted(apic_id: usize) -> bool {
-        unsafe {
-            BOOTED_CPU_APIC_ID[apic_id] != u32::MAX
-        }
+        unsafe { BOOTED_CPU_APIC_ID[apic_id] != u32::MAX }
     }
 
     // pub fn init(&mut self, linux_sp: usize, cell: &Cell) -> HvResult {

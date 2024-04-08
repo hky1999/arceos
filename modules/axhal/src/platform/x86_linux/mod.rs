@@ -76,7 +76,7 @@ fn current_cpu_id() -> usize {
 }
 
 fn vmm_primary_init_early(cpu_id: usize) {
-    crate::mem::clear_bss();
+    // crate::mem::clear_bss();
     crate::cpu::init_primary(cpu_id);
     self::time::init_early();
 
@@ -98,9 +98,7 @@ fn vmm_primary_init_early(cpu_id: usize) {
     VMM_PRIMARY_INIT_OK.store(1, Ordering::Release);
 
     unsafe {
-        let linux_cr3 = x86::controlregs::cr3();
         rust_vmm_main(cpu_id);
-        x86::controlregs::cr3_write(linux_cr3)
     }
 }
 
