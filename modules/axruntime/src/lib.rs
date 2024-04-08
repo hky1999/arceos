@@ -34,7 +34,7 @@ pub use self::mp::rust_main_secondary;
 
 mod vmm;
 
-pub use self::vmm::{rust_vmm_main, rust_vmm_main_secondary, rust_arceos_main};
+pub use self::vmm::{rust_vmm_main, rust_arceos_main};
 
 const LOGO: &str = r#"
        d8888                            .d88888b.   .d8888b.

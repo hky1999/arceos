@@ -18,7 +18,7 @@ mod config;
 mod consts;
 mod header;
 
-#[cfg(feature = "smp")]
+// #[cfg(feature = "smp")]
 pub mod mp;
 
 #[cfg(feature = "irq")]
@@ -63,8 +63,6 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
 
 extern "C" {
     fn rust_vmm_main(cpu_id: usize);
-    #[cfg(feature = "smp")]
-    fn rust_vmm_main_secondary(cpu_id: usize);
     fn rust_arceos_main(cpu_id: usize) -> !;
 }
 
@@ -75,8 +73,16 @@ fn current_cpu_id() -> usize {
     }
 }
 
+// Since primary core only response for boot rt cores.
+// Secondary cores reserved for Linux only entered for a shot time.
+// We can do a simple refactor here.
+
+
 fn vmm_primary_init_early(cpu_id: usize) {
+    // We do not clear bss here.
+    // Because currently the image was loaded by Linux.
     // crate::mem::clear_bss();
+    
     crate::cpu::init_primary(cpu_id);
     self::time::init_early();
 
@@ -102,15 +108,6 @@ fn vmm_primary_init_early(cpu_id: usize) {
     }
 }
 
-fn vmm_secondary_init_early(cpu_id: usize) {
-    // println!("ARCEOS CPU {} secondary_init_early()", cpu_id);
-    // crate::cpu::init_secondary(cpu_id);
-    // self::dtables::init_secondary();
-    unsafe {
-        rust_vmm_main_secondary(cpu_id);
-    }
-}
-
 extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32 {
     // Currently we set core 0 as Linux.
     let is_primary = cpu_data.id == 0;
@@ -131,9 +128,9 @@ extern "sysv64" fn vmm_cpu_entry(cpu_data: &mut PerCpu, _linux_sp: usize) -> i32
     } else {
         // wait_for_counter(&VMM_PRIMARY_INIT_OK, 1);
 
-        wait_for_counter(&VMM_MAIN_INIT_OK, 1);
+        // wait_for_counter(&VMM_MAIN_INIT_OK, 1);
 
-        vmm_secondary_init_early(cpu_data.id as usize);
+        // vmm_secondary_init_early(cpu_data.id as usize);
     }
 
     let code = 0;
@@ -175,6 +172,7 @@ unsafe extern "C" fn rust_entry_from_vmm(magic: usize) {
 /// Initializes the platform devices for the primary CPU.
 pub fn vmm_platform_init() {
     self::lapic::init();
+    self::mp::start_arceos_cpus();
 }
 
 /// Initializes the platform devices for the primary CPU.

@@ -1,35 +1,17 @@
-use axconfig::{SMP, TASK_STACK_SIZE};
-use axhal::mem::{virt_to_phys, VirtAddr};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::Ordering;
 
 fn is_init_ok() -> bool {
-    super::INITED_CPUS.load(Ordering::Acquire) == (axconfig::SMP)
-}
-
-/// The main entry point of the ArceOS runtime for secondary CPUs.
-/// When booting from Linux and set self as VMM!
-///
-/// It is called from the `vmm_cpu_entry` code in [axhal].
-#[no_mangle]
-pub extern "C" fn rust_vmm_main_secondary(cpu_id: usize) {
-    info!("Secondary CPU {:x} started.", cpu_id);
-
-    info!("Secondary CPU {:x} init OK.", cpu_id);
-    super::INITED_CPUS.fetch_add(1, Ordering::Relaxed);
-
-    while !is_init_ok() {
-        core::hint::spin_loop();
-    }
+    super::INITED_CPUS.load(Ordering::Acquire) == (axconfig::SMP + 1)
 }
 
 extern "C" {
     fn main();
 }
 
-/// The main entry point of the ArceOS runtime for secondary CPUs.
-/// When booting from Linux and set self as VMM!
+/// The main entry point of the ArceOS runtime for RT CPUs.
+/// When booting from Linux and reserving CPU for RT tasks!
 ///
-/// It is called from the `vmm_cpu_entry` code in [axhal].
+/// It is called from the `rust_entry_from_vmm` code in [axhal].
 #[no_mangle]
 pub extern "C" fn rust_arceos_main(cpu_id: usize) {
     info!("ARCEOS CPU {:x} started.", cpu_id);
@@ -58,16 +40,15 @@ pub extern "C" fn rust_arceos_main(cpu_id: usize) {
 
     core::hint::spin_loop();
 }
-/// The main entry point of the ArceOS runtime.
-/// When booting from Linux and set self as VMM!
+
+/// The main entry point of the ArceOS-VMM **when booting from Linux and set self as VMM**!
 ///
 /// It is called from the `vmm_cpu_entry` code in [axhal]. `cpu_id` is the ID of
 /// the current CPU, and `dtb` is the address of the device tree blob. It
 /// finally calls the application's `main` function after all initialization
 /// work is done.
 ///
-/// In multi-core environment, this function is called on the primary CPU,
-/// and the secondary CPUs call [`rust_vmm_main_secondary`].
+/// In multi-core environment, this function is called on the primary CPU.
 #[cfg_attr(not(test), no_mangle)]
 pub extern "C" fn rust_vmm_main(cpu_id: usize) {
     ax_println!("{}", super::LOGO);
@@ -109,14 +90,14 @@ pub extern "C" fn rust_vmm_main(cpu_id: usize) {
     info!("Initialize kernel page table...");
     vmm_remap_kernel_memory().expect("remap kernel memory failed");
 
-    info!("Initialize VMM platform devices...");
+    info!("Initialize VMM platform...");
     axhal::vmm_platform_init();
 
     info!("VMM Primary CPU {} init OK.", cpu_id);
 
-    axhal::mp::start_arceos_cpus();
+    // axhal::mp::start_arceos_cpus();
 
-    axhal::mp::continue_secondary_cpus();
+    // axhal::mp::continue_secondary_cpus();
 
     super::INITED_CPUS.fetch_add(1, Ordering::Relaxed);
 

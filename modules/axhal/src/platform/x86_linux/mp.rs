@@ -15,12 +15,12 @@ const START_PAGE_PADDR: PhysAddr = PhysAddr::from(START_PAGE_IDX as usize * PAGE
 /// Starts the given secondary CPU with its boot stack.
 pub fn start_secondary_cpu(_apic_id: usize, _stack_top: crate::mem::PhysAddr) {
     // No need
-    // This step is completed by Linux.
-    // super::ARCEOS_MAIN_INIT_OK.store(1, Ordering::Release);
+    // For CPU reserved for Linux, this step is completed by Linux.
+    // For CPU reserved for RT-task, this step is completed by `start_arceos_cpus`.
 }
 
 pub fn continue_secondary_cpus() {
-    super::VMM_MAIN_INIT_OK.fetch_add(1, Ordering::Release);
+    // super::VMM_MAIN_INIT_OK.fetch_add(1, Ordering::Release);
     // super::VMM_MAIN_INIT_OK.store(1, Ordering::Release);
 }
 
@@ -58,19 +58,12 @@ pub fn start_arceos_cpus() {
             (ap_end as usize - ap_start as usize) / 8,
         );
 
-        //   start_page[U64_PER_PAGE - 2] = stack_top.as_usize() as u64; // stack_top
         // We need to use physical address here.
         // Since current physical to virtual address is not identical mapped with offset 0xffff_ff80_0000_0000.
         let ap_entry_virt = VirtAddr::from(ap_entry32 as usize);
         let ap_entry_phys = virt_to_phys(ap_entry_virt);
 
-        debug!(
-            "boot ap at {:?}, physical {:?}",
-            ap_entry_virt, ap_entry_phys
-        );
-
-        start_page[U64_PER_PAGE - 1] =
-            virt_to_phys(VirtAddr::from(ap_entry32 as usize)).as_usize() as _; // entry
+        start_page[U64_PER_PAGE - 1] = ap_entry_phys.as_usize() as _; // entry
 
         let max_cpus = super::header::HvHeader::get().max_cpus;
         let mut arceos_cpu_num = 0;
@@ -79,19 +72,24 @@ pub fn start_arceos_cpus() {
             if PerCpu::cpu_is_booted(apic_id as usize) {
                 continue;
             }
-            let stack_top = virt_to_phys(VirtAddr::from(unsafe {
-                SECONDARY_BOOT_STACK[apic_id as usize].as_ptr_range().end as usize
-            }))
+            let stack_top = virt_to_phys(VirtAddr::from(
+                SECONDARY_BOOT_STACK[arceos_cpu_num].as_ptr_range().end as usize,
+            ))
             .as_usize();
 
             start_page[U64_PER_PAGE - 2] = stack_top as u64; // stack_top
 
             super::lapic::start_ap(apic_id, START_PAGE_IDX);
+            info!(
+                "starting ArceOS {} CPU, apic id {}",
+                arceos_cpu_num, apic_id
+            );
+
             arceos_cpu_num += 1;
             // wait for max 100ms
             busy_wait(Duration::from_millis(100)); // 100ms
         }
-        debug!("starting {} CPUs for ArceOS ", arceos_cpu_num);
+        info!("starting {} CPUs for ArceOS ", arceos_cpu_num);
 
         start_page.copy_from_slice(&backup);
     }
