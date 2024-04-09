@@ -16,6 +16,12 @@ extern "C" {
 pub extern "C" fn rust_arceos_main(cpu_id: usize) {
     info!("ARCEOS CPU {:x} started.", cpu_id);
 
+    #[cfg(feature = "paging")]
+    {
+        info!("Initialize kernel page table...");
+        vmm_remap_kernel_memory().expect("remap kernel memoy failed");
+    }
+
     info!("Initialize platform devices...");
     axhal::platform_init();
 
@@ -28,17 +34,18 @@ pub extern "C" fn rust_arceos_main(cpu_id: usize) {
         super::init_interrupt();
     }
 
-    info!("ARCEOS CPU {:x} init OK.", cpu_id);
+    info!("ARCEOS Primary CPU {:x} init OK.", cpu_id);
     super::INITED_CPUS.fetch_add(1, Ordering::Relaxed);
 
     while !is_init_ok() {
         core::hint::spin_loop();
     }
 
-    info!("ARCEOS CPU {:x} enter main ...", cpu_id);
+    info!("ARCEOS Primary CPU {:x} enter main ...", cpu_id);
     unsafe { main() };
+    info!("ARCEOS main task exited: exit_code={}", 0);
 
-    core::hint::spin_loop();
+    axtask::exit(0);
 }
 
 /// The main entry point of the ArceOS-VMM **when booting from Linux and set self as VMM**!
@@ -87,17 +94,16 @@ pub extern "C" fn rust_vmm_main(cpu_id: usize) {
 
     super::init_allocator();
 
-    info!("Initialize kernel page table...");
-    vmm_remap_kernel_memory().expect("remap kernel memory failed");
+    #[cfg(feature = "paging")]
+    {
+        info!("Initialize kernel page table...");
+        vmm_remap_kernel_memory().expect("remap kernel memory failed");
+    }
 
     info!("Initialize VMM platform...");
     axhal::vmm_platform_init();
 
-    info!("VMM Primary CPU {} init OK.", cpu_id);
-
-    // axhal::mp::start_arceos_cpus();
-
-    // axhal::mp::continue_secondary_cpus();
+    // info!("VMM Primary CPU {} init OK.", cpu_id);
 
     super::INITED_CPUS.fetch_add(1, Ordering::Relaxed);
 
@@ -106,6 +112,7 @@ pub extern "C" fn rust_vmm_main(cpu_id: usize) {
     }
 }
 
+#[cfg(feature = "paging")]
 fn vmm_remap_kernel_memory() -> Result<(), axhal::paging::PagingError> {
     use axhal::host_memory_regions;
     use axhal::mem::{memory_regions, phys_to_virt};
@@ -114,31 +121,33 @@ fn vmm_remap_kernel_memory() -> Result<(), axhal::paging::PagingError> {
 
     static KERNEL_PAGE_TABLE: LazyInit<PageTable> = LazyInit::new();
 
-    info!("BSP CPU init KERNEL_PAGE_TABLE...");
-    let mut kernel_page_table = PageTable::try_new()?;
-    for r in memory_regions() {
-        kernel_page_table.map_region(
-            phys_to_virt(r.paddr),
-            r.paddr,
-            r.size,
-            r.flags.into(),
-            true,
-        )?;
+    if axhal::cpu::this_cpu_is_bsp() {
+        info!("BSP CPU init KERNEL_PAGE_TABLE...");
+        let mut kernel_page_table = PageTable::try_new()?;
+        for r in memory_regions() {
+            kernel_page_table.map_region(
+                phys_to_virt(r.paddr),
+                r.paddr,
+                r.size,
+                r.flags.into(),
+                true,
+            )?;
+        }
+
+        for r in host_memory_regions() {
+            kernel_page_table.map_region(
+                phys_to_virt(r.paddr),
+                r.paddr,
+                r.size,
+                r.flags.into(),
+                true,
+            )?;
+        }
+
+        KERNEL_PAGE_TABLE.init_by(kernel_page_table);
+
+        info!("KERNEL_PAGE_TABLE init success");
     }
-
-    for r in host_memory_regions() {
-        kernel_page_table.map_region(
-            phys_to_virt(r.paddr),
-            r.paddr,
-            r.size,
-            r.flags.into(),
-            true,
-        )?;
-    }
-
-    KERNEL_PAGE_TABLE.init_by(kernel_page_table);
-
-    info!("KERNEL_PAGE_TABLE init success");
 
     unsafe { axhal::arch::write_page_table_root(KERNEL_PAGE_TABLE.root_paddr()) };
     Ok(())

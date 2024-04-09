@@ -80,16 +80,16 @@ pub fn start_arceos_cpus() {
             start_page[U64_PER_PAGE - 2] = stack_top as u64; // stack_top
 
             super::lapic::start_ap(apic_id, START_PAGE_IDX);
-            info!(
-                "starting ArceOS {} CPU, apic id {}",
-                arceos_cpu_num, apic_id
-            );
+            // info!(
+            //     "starting ArceOS {} CPU, apic id {}",
+            //     arceos_cpu_num, apic_id
+            // );
 
             arceos_cpu_num += 1;
             // wait for max 100ms
             busy_wait(Duration::from_millis(100)); // 100ms
         }
-        info!("starting {} CPUs for ArceOS ", arceos_cpu_num);
+        // info!("starting {} CPUs for ArceOS ", arceos_cpu_num);
 
         start_page.copy_from_slice(&backup);
     }

@@ -19,16 +19,6 @@ pub fn this_cpu_id() -> usize {
 /// processor or BSP)
 #[inline]
 pub fn this_cpu_is_bsp() -> bool {
-    axlog::ax_println!("judging this_cpu_is_bsp...");
-
-    let cpu_id = CPU_ID.read_current();
-    axlog::ax_println!("CPU_ID {cpu_id}");
-    let is_bsp = IS_BSP.read_current();
-    axlog::ax_println!("IS_BSP {is_bsp}");
-
-    let tp = percpu::get_local_thread_pointer();
-    axlog::ax_println!("tp {:#x} {:#x}", tp, tp - 0xffff_feff_c600_0000);
-
     IS_BSP.read_current()
 }
 

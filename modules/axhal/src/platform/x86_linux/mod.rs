@@ -40,8 +40,6 @@ use header::HvHeader;
 use percpu::PerCpu;
 
 static VMM_PRIMARY_INIT_OK: AtomicU32 = AtomicU32::new(0);
-static VMM_MAIN_INIT_OK: AtomicU32 = AtomicU32::new(0);
-static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
 
 fn has_err() -> bool {
@@ -57,10 +55,6 @@ fn wait_for(condition: impl Fn() -> bool) {
     }
 }
 
-fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
-    wait_for(|| counter.load(Ordering::Acquire) < max_value)
-}
-
 extern "C" {
     fn rust_vmm_main(cpu_id: usize);
     fn rust_arceos_main(cpu_id: usize) -> !;
@@ -73,16 +67,11 @@ fn current_cpu_id() -> usize {
     }
 }
 
-// Since primary core only response for boot rt cores.
-// Secondary cores reserved for Linux only entered for a shot time.
-// We can do a simple refactor here.
-
-
 fn vmm_primary_init_early(cpu_id: usize) {
     // We do not clear bss here.
     // Because currently the image was loaded by Linux.
     // crate::mem::clear_bss();
-    
+
     crate::cpu::init_primary(cpu_id);
     self::time::init_early();
 
@@ -157,19 +146,21 @@ unsafe extern "C" fn rust_entry(_magic: usize, _mbi: usize) {
 
 #[allow(unused_variables)]
 unsafe extern "C" fn rust_entry_from_vmm(magic: usize) {
-    info!("ARCEOS CPU entered on Core {}.", current_cpu_id());
+    let cpu_id = current_cpu_id();
+    info!("ARCEOS CPU entered on Core {}.", cpu_id);
 
     if magic == self::boot::MULTIBOOT_BOOTLOADER_MAGIC {
-        crate::cpu::init_secondary(current_cpu_id());
+        crate::cpu::init_secondary(cpu_id);
         self::dtables::init_primary();
         self::time::init_early();
-        rust_arceos_main(current_cpu_id());
+        rust_arceos_main(cpu_id);
     } else {
         panic!("Something is wrong during booting RT cores...");
     }
 }
 
 /// Initializes the platform devices for the primary CPU.
+/// Boot arceos cpus through sendsipi.
 pub fn vmm_platform_init() {
     self::lapic::init();
     self::mp::start_arceos_cpus();
