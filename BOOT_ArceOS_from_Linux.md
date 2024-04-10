@@ -12,6 +12,7 @@ Here is a blueprint for what this project could be in the future.
 Firstly, prepare a Linux environment through [cloud-init](https://cloud-init.io/) and boot it upon QEMU.
 
 ```bash
+# Enter scripts/vmm/host directory. 
 cd scripts/vmm/host
 make image
 ```
@@ -19,19 +20,21 @@ You only need to run upon commands once for downloading and configuration.
 
 Execute this command only for subsequent runs.
 ```bash
+# Execute in the scripts/vmm/host directory. 
 make qemu
 ```
 
 Copy helpful scripts into the guest OS:
 
 ```bash
-scp -P 2333 ../guest/* ubuntu@localhost:/home/ubuntu
+# Execute in the scripts/vmm/host directory. 
+scp -P 6657 ../guest/* ubuntu@localhost:/home/ubuntu
 ```
 
 Setup in the guest OS, you can run this command direcly through QEMU console or through `make ssh`
 
 ```bash   
-# in guest
+# Execute in guest /home/ubuntu directory.
 ./setup.sh
 ```
 
@@ -40,11 +43,13 @@ Compile ArceOS with target platform and copy its image into the guest OS.
 I write a simple script inside [Makefile](scripts/vmm/scp.mk).
 
 ```bash
+# Execute in the arceos root directory. 
 make A=apps/vmm PLATFORM=x86_64-linux LOG=info SMP=1 vmm_scp
 ```
 
 ### 3. Boot ArceOS from Linux!
 ```bash
+# Execute in guest /home/ubuntu directory.
 ./enable-arceos-vmm.sh
 ```
 ## Demo
