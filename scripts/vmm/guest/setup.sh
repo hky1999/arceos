@@ -10,7 +10,7 @@ sudo mkdir -p /lib/firmware
 sudo ln -sf ~/arceos-intel.bin /lib/firmware
 
 # Clone jailhouse, apply patches and build
-git clone -b arceos --single-branch https://github.com/arceos-hypervisor/jailhouse-arceos.git
+git clone -b arceos_rt --single-branch https://github.com/arceos-hypervisor/jailhouse-arceos.git
 cd jailhouse-arceos
 make
 
