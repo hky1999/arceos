@@ -1,3 +1,8 @@
+/// Some problems remain:
+/// 1. How to return rt core back to Linux so we can "dynamically" control these rt-cores.
+/// 2. How to co-schedual process from Linux within process inside arceos.
+/// 3. How to handle memory mapping, currently both sides have a complete memory view of the other's address space.
+
 use core::sync::atomic::Ordering;
 
 fn is_init_ok() -> bool {
