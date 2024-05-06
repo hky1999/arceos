@@ -93,3 +93,65 @@ pub fn scf_read(fd: usize, mut buf: UserOutPtr<u8>, len: usize) -> isize {
     }
     ret as _
 }
+
+pub fn scf_open_vdisk(id: usize) -> isize {
+    let pool = SyscallDataBuffer::get();
+    let args = pool.alloc(SyscallArgs {
+        args: [id as u64, 0, 0, 0, 0, 0],
+    });
+    let cond = SyscallCondVar::new();
+    send_request(
+        0xfbu8 as Sysno,
+        pool.offset_of(args),
+        ScfRequestToken::from(&cond),
+    );
+    let ret = cond.wait();
+    unsafe {
+        pool.dealloc(args);
+    }
+    ret as _
+}
+
+pub const VDISK_BLOCK_SIZE: usize = 512;
+
+pub fn scf_read_vdisk_block(id: usize, block: usize, dest: &mut[u8; VDISK_BLOCK_SIZE]) -> isize {
+    let pool = SyscallDataBuffer::get();
+    let chunk_ptr = unsafe { pool.alloc_array_uninit::<u8>(VDISK_BLOCK_SIZE) };
+    let args = pool.alloc(SyscallArgs {
+        args: [id as u64, block as u64, pool.offset_of(dest), 0, 0, 0],
+    });
+    let cond = SyscallCondVar::new();
+    send_request(
+        0xfcu8 as Sysno,
+        pool.offset_of(chunk_ptr),
+        ScfRequestToken::from(&cond),
+    );
+    let ret = cond.wait();
+    unsafe {
+        dest.copy_from_slice(from_raw_parts(chunk_ptr, VDISK_BLOCK_SIZE));
+        pool.dealloc(chunk_ptr);
+        pool.dealloc(args);
+    }
+    ret as _
+}
+
+pub fn scf_write_vdisk_block(id: usize, block: usize, src: &[u8; VDISK_BLOCK_SIZE]) -> isize {
+    let pool = SyscallDataBuffer::get();
+    let chunk_ptr = unsafe { pool.alloc_array_uninit::<u8>(VDISK_BLOCK_SIZE) };
+    unsafe { from_raw_parts_mut(chunk_ptr, VDISK_BLOCK_SIZE).copy_from_slice(src); }
+    let args = pool.alloc(SyscallArgs {
+        args: [id as u64, block as u64, pool.offset_of(chunk_ptr), 0, 0, 0],
+    });
+    let cond = SyscallCondVar::new();
+    send_request(
+        0xfdu8 as Sysno,
+        pool.offset_of(args),
+        ScfRequestToken::from(&cond),
+    );
+    let ret = cond.wait();
+    unsafe {
+        pool.dealloc(chunk_ptr);
+        pool.dealloc(args);
+    }
+    ret as _
+}
