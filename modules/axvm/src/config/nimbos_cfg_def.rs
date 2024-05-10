@@ -15,25 +15,25 @@ pub fn nimbos_memory_regions_setup(regions: &mut Vec<GuestMemoryRegion>) {
             size: GUEST_PHYS_MEMORY_SIZE,
             flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::EXECUTE,
         },
-        GuestMemoryRegion {
-            // PCI
-            gpa: 0x8000_0000,
-            hpa: 0x8000_0000,
-            size: 0x1000_0000,
-            flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::DEVICE,
-        },
-        GuestMemoryRegion {
-            gpa: 0xfe00_0000,
-            hpa: 0xfe00_0000,
-            size: 0x1_0000,
-            flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::DEVICE,
-        },
-        GuestMemoryRegion {
-            gpa: 0xfeb0_0000,
-            hpa: 0xfeb0_0000,
-            size: 0x10_0000,
-            flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::DEVICE,
-        },
+        // GuestMemoryRegion {
+        //     // PCI
+        //     gpa: 0x8000_0000,
+        //     hpa: 0x8000_0000,
+        //     size: 0x1000_0000,
+        //     flags: MappingFlags::READ | MappingFlags::WRITE,
+        // },
+        // GuestMemoryRegion {
+        //     gpa: 0xfe00_0000,
+        //     hpa: 0xfe00_0000,
+        //     size: 0x1_0000,
+        //     flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::DEVICE,
+        // },
+        // GuestMemoryRegion {
+        //     gpa: 0xfeb0_0000,
+        //     hpa: 0xfeb0_0000,
+        //     size: 0x10_0000,
+        //     flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::DEVICE,
+        // },
         GuestMemoryRegion {
             // IO APIC
             gpa: 0xfec0_0000,
