@@ -51,7 +51,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
     }
 
     fn init_pci_host(&mut self) {
-        let pci_host = DummyPciHost::new(Some(Arc::new(super::virtio::VirtioMsiIrqManager {})));
+        let pci_host = PciHost::new(Some(Arc::new(super::virtio::VirtioMsiIrqManager {})));
         self.pci_devices = Some(Arc::new(Mutex::new(pci_host)));
     }
 
