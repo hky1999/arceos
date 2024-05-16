@@ -16,7 +16,7 @@ qemu_args := \
   -net user,id=net,hostfwd=tcp::$(PORT)-:22 -net nic,model=e1000e \
   -D qemu.log -d in_asm,int,mmu,pcall,cpu_reset,guest_errors \
   -serial mon:stdio \
-  -serial telnet:localhost:4321,server,wait
+  -serial telnet:localhost:4321,server,nowait
 
 $(qemu_image):
 	wget https://cloud-images.ubuntu.com/releases/focal/release/$(qemu_image)
