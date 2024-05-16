@@ -666,7 +666,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> PerVmDevices<H> for NimbosVmD
         // init pci device
         devices.init_pci_host();
         devices.add_port_io_device(devices.pci_devices.clone().unwrap());
-        devices.add_pci_device(String::from("pcitest"), Arc::new(AtomicU16::new(0)), 0x18)?;
+        // devices.add_pci_device(String::from("pcitest"), Arc::new(AtomicU16::new(0)), 0x18)?;
 
         // Create a virtio dummy device
         // let virtio_device_dummy = DummyVirtioDevice::new(VIRTIO_TYPE_BLOCK, 1, 4);

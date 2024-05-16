@@ -418,6 +418,28 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
     /// # Arguments
     ///
     /// * `offset` - The offset of common config.
+    /// struct virtio_pci_common_cfg {
+    ///         /* About the whole device. */
+    ///         le32 device_feature_select;     /* read-write */
+    ///         le32 device_feature;            /* read-only for driver */
+    ///         le32 driver_feature_select;     /* read-write */
+    ///         le32 driver_feature;            /* read-write */
+    ///         le16 config_msix_vector;        /* read-write */
+    ///         le16 num_queues;                /* read-only for driver */
+    ///         u8 device_status;               /* read-write */
+    ///         u8 config_generation;           /* read-only for driver */
+
+    ///        le16 queue_select;              /* read-write */
+    ///         le16 queue_size;                /* read-write */
+    ///         le16 queue_msix_vector;         /* read-write */
+    ///         le16 queue_enable;              /* read-write */
+    ///         le16 queue_notify_off;          /* read-only for driver */
+    ///         le64 queue_desc;                /* read-write */
+    ///         le64 queue_driver;              /* read-write */
+    ///         le64 queue_device;              /* read-write */
+    ///         le16 queue_notify_data;         /* read-only for driver */
+    ///         le16 queue_reset;               /* read-write */
+    /// };
     fn read_common_config(&self, offset: u64) -> HyperResult<u32> {
         let locked_device = self.device.lock();
         let value = match offset {
