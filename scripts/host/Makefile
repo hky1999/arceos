@@ -9,7 +9,7 @@ OUT_ELF ?= ../../apps/hv/hv_pc-x86.elf
 
 qemu_image := ubuntu-20.04-server-cloudimg-amd64.img
 qemu_args := \
-  -smp 2 -m 8G -accel kvm -nographic \
+  -smp 4 -m 8G -accel kvm -nographic \
   -machine q35,kernel_irqchip=split \
   -cpu host,-kvm-asyncpf,-kvm-pv-eoi,-kvm-pv-ipi,-kvm-pv-sched-yield,-kvm-pv-unhalt,-kvm-steal-time,-kvmclock \
   -drive file=$(qemu_image) \
