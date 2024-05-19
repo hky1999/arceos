@@ -100,7 +100,7 @@ impl<B: BarAllocTrait> PioOps for PciHost<B> {
             }
             let mut offset: u32 = (cloned_hb.config_addr & !CONFIG_ADDRESS_ENABLE_MASK)
                 + (port - PCI_CFG_DATA_PORT.start) as u32;
-            debug!("in pci read: offset:{:#x}", offset);
+            // debug!("in pci read: offset:{:#x}", offset);
             let bus_num = ((offset >> PIO_BUS_SHIFT) & CONFIG_BUS_MASK) as u8;
             let devfn = ((offset >> PIO_DEVFN_SHIFT) & CONFIG_DEVFN_MASK) as u8;
             match cloned_hb.find_device(bus_num, devfn) {
