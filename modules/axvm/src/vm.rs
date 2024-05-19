@@ -1,3 +1,4 @@
+use core::ops::Deref;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use hypercraft::{VCpu, VmCpus, VM};
@@ -116,6 +117,7 @@ pub fn boot_vm(vm_id: usize) {
         .generate_guest_phys_memory_set()
         .expect("Failed to generate GPM");
 
+    let gpm = gpm.read().deref();
     let npt = gpm.nest_page_table();
     let npt_root = gpm.nest_page_table_root();
     info!("{:#x?}", gpm);
