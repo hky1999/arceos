@@ -30,6 +30,41 @@ pub struct GuestMemoryRegion {
     pub flags: MappingFlags,
 }
 
+impl GuestMemoryRegion {
+    fn is_overlap_with(&self, other: &Self) -> bool {
+        let s0 = self.gpa;
+        let e0 = s0 + self.size;
+        let s1 = other.gpa;
+        let e1 = s1 + other.size;
+        !(e0 <= s1 || e1 <= s0)
+    }
+
+    fn target(&self, gpa: GuestPhysAddr) -> HostPhysAddr {
+        self.hpa.wrapping_add(gpa.wrapping_sub(self.gpa))
+    }
+
+    fn map_to(&self, npt: &mut GuestPageTable) -> HyperResult {
+        let mut start = self.gpa;
+        let end = start + self.size;
+        while start < end {
+            let target = self.target(start);
+            npt.map(start, target, self.flags)?;
+            start += HyperCraftHalImpl::PAGE_SIZE;
+        }
+        Ok(())
+    }
+
+    fn unmap_to(&self, npt: &mut GuestPageTable) -> HyperResult {
+        let mut start = self.gpa;
+        let end = start + self.size;
+        while start < end {
+            npt.unmap(start)?;
+            start += HyperCraftHalImpl::PAGE_SIZE;
+        }
+        Ok(())
+    }
+}
+
 impl Display for GuestMemoryRegion {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(
@@ -44,6 +79,7 @@ impl Display for GuestMemoryRegion {
     }
 }
 
+/*
 #[derive(Clone, Copy)]
 pub struct MapRegion {
     pub start: GuestPhysAddr,
@@ -167,9 +203,9 @@ impl From<GuestMemoryRegion> for MapRegion {
         Self::new_offset(r.gpa, r.hpa, r.size, r.flags)
     }
 }
-
+ */
 pub struct GuestPhysMemorySet {
-    regions: BTreeMap<GuestPhysAddr, MapRegion>,
+    regions: BTreeMap<GuestPhysAddr, GuestMemoryRegion>,
     npt: GuestPageTable,
 }
 
@@ -189,13 +225,13 @@ impl GuestPhysMemorySet {
         self.npt.root_paddr().into()
     }
 
-    fn test_free_area(&self, other: &MapRegion) -> bool {
-        if let Some((_, before)) = self.regions.range(..other.start).last() {
+    fn test_free_area(&self, other: &GuestMemoryRegion) -> bool {
+        if let Some((_, before)) = self.regions.range(..other.gpa).last() {
             if before.is_overlap_with(other) {
                 return false;
             }
         }
-        if let Some((_, after)) = self.regions.range(other.start..).next() {
+        if let Some((_, after)) = self.regions.range(other.gpa..).next() {
             if after.is_overlap_with(other) {
                 return false;
             }
@@ -203,7 +239,7 @@ impl GuestPhysMemorySet {
         true
     }
 
-    pub fn map_region(&mut self, region: MapRegion) -> HyperResult {
+    pub fn map_region(&mut self, region: GuestMemoryRegion) -> HyperResult {
         let mut mapped_region = region;
         debug!(
             "GPM Mapping Region [{:#x}-{:#x}] {:?}",
@@ -211,6 +247,7 @@ impl GuestPhysMemorySet {
             region.start + region.size,
             region.flags
         );
+        // TODO: determine why this part exists and should we keep the next part
         while mapped_region.size != 0 {
             if !self.test_free_area(&mapped_region) {
                 // warn!(
@@ -235,8 +272,18 @@ impl GuestPhysMemorySet {
             // );
             return Ok(());
         }
-        mapped_region.map_to(&mut self.npt)?;
-        self.regions.insert(mapped_region.start, mapped_region);
+        // TODO: determine why the previous part exists and should we keep this part
+        if !self.test_free_area(&region) {
+            warn!(
+                "MapRegion({:#x}..{:#x}) overlapped in:\n{:#x?}",
+                region.gpa,
+                region.gpa + region.size,
+                self
+            );
+            return Err(Error::InvalidParam);
+        }
+        region.map_to(&mut self.npt)?;
+        self.regions.insert(region.gpa, region);
         Ok(())
     }
 
