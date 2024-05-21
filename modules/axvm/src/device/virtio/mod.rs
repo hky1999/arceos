@@ -300,6 +300,7 @@ pub const VIRTIO_MMIO_INT_CONFIG: u32 = 0x02;
 /// Guest OS uses notify reg to notify the VMM.
 pub const NOTIFY_REG_OFFSET: u32 = 0x50;
 
+
 /// Packet header, refer to Virtio Spec.
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]

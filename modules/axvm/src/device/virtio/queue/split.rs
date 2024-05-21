@@ -32,12 +32,12 @@ use core::sync::atomic::{fence, Ordering, AtomicBool};
 
 //use core::sync::atomic::{AtomicU16, };
 
-
+use super::{AddressSpace, RegionCache, RegionType};
 
 use log::{error, warn};
 
 use super::{
-    checked_offset_mem, ElemIovec, Element, VringOps, INVALID_VECTOR_NUM, VIRTQ_DESC_F_INDIRECT,
+    ElemIovec, Element, VringOps, INVALID_VECTOR_NUM, VIRTQ_DESC_F_INDIRECT,
     VIRTQ_DESC_F_NEXT, VIRTQ_DESC_F_WRITE,
 };
 
@@ -48,7 +48,7 @@ use super::{
 };
 */
 
-use hypercraft::{HyperError, HyperResult, MmioOps, PciError, PioOps, RegionOps, VirtioError};
+use hypercraft::{GuestPhysAddr, HostVirtAddr, HyperError, HyperResult, MmioOps, PciError, PioOps, RegionOps, VirtioError};
 
 use crate::device::virtio::{
     report_virtio_error, virtio_has_feature, VirtioInterrupt, VIRTIO_F_RING_EVENT_IDX,
@@ -67,39 +67,39 @@ const VRING_USED_F_NO_NOTIFY: u16 = 1;
 /// Max total len of a descriptor chain.
 const DESC_CHAIN_MAX_TOTAL_LEN: u64 = 1u64 << 32;
 /// The length of used element.
-const USEDELEM_LEN: u64 = size_of::<UsedElem>() as u64;
+const USEDELEM_LEN: usize = size_of::<UsedElem>();
 /// The length of avail element.
-const AVAILELEM_LEN: u64 = size_of::<u16>() as u64;
+const AVAILELEM_LEN: usize = size_of::<u16>();
 /// The length of available ring except array of avail element(flags: u16 idx: u16 used_event: u16).
-const VRING_AVAIL_LEN_EXCEPT_AVAILELEM: u64 = (size_of::<u16>() * 3) as u64;
+const VRING_AVAIL_LEN_EXCEPT_AVAILELEM: usize = (size_of::<u16>() * 3);
 /// The length of used ring except array of used element(flags: u16 idx: u16 avail_event: u16).
-const VRING_USED_LEN_EXCEPT_USEDELEM: u64 = (size_of::<u16>() * 3) as u64;
+const VRING_USED_LEN_EXCEPT_USEDELEM: usize = (size_of::<u16>() * 3);
 /// The length of flags(u16) and idx(u16).
-const VRING_FLAGS_AND_IDX_LEN: u64 = size_of::<SplitVringFlagsIdx>() as u64;
+const VRING_FLAGS_AND_IDX_LEN: usize = size_of::<SplitVringFlagsIdx>();
 /// The position of idx in the available ring and the used ring.
-const VRING_IDX_POSITION: u64 = size_of::<u16>() as u64;
+const VRING_IDX_POSITION: usize = size_of::<u16>();
 /// The length of virtio descriptor.
-const DESCRIPTOR_LEN: u64 = size_of::<SplitVringDesc>() as u64;
+const DESCRIPTOR_LEN: usize = size_of::<SplitVringDesc>();
 
 #[derive(Default, Clone, Copy)]
 pub struct VirtioAddrCache {
     /// Host virtual address of the descriptor table.
-    pub desc_table_host: u64,
+    pub desc_table_host: HostVirtAddr,
     /// Host virtual address of the available ring.
-    pub avail_ring_host: u64,
+    pub avail_ring_host: HostVirtAddr,
     /// Host virtual address of the used ring.
-    pub used_ring_host: u64,
+    pub used_ring_host: HostVirtAddr,
 }
 
 /// The configuration of virtqueue.
 #[derive(Default, Clone, Copy)]
 pub struct QueueConfig {
     /// Guest physical address of the descriptor table.
-    pub desc_table: u64,
+    pub desc_table: GuestPhysAddr,
     /// Guest physical address of the available ring.
-    pub avail_ring: u64,
+    pub avail_ring: GuestPhysAddr,
     /// Guest physical address of the used ring.
-    pub used_ring: u64,
+    pub used_ring: GuestPhysAddr,
     /// Host address cache.
     pub addr_cache: VirtioAddrCache,
     /// The maximal size of elements offered by the device.
@@ -144,29 +144,32 @@ impl QueueConfig {
         }
     }
 
-    fn get_desc_size(&self) -> u64 {
-        min(self.size, self.max_size) as u64 * DESCRIPTOR_LEN
+    fn get_queue_size(&self) -> u16 {
+        min(self.size, self.max_size)
     }
 
-    fn get_used_size(&self, features: u64) -> u64 {
-        let size = if virtio_has_feature(features, VIRTIO_F_RING_EVENT_IDX) {
-            2_u64
-        } else {
-            0_u64
-        };
-
-        size + VRING_FLAGS_AND_IDX_LEN + (min(self.size, self.max_size) as u64) * USEDELEM_LEN
+    fn get_desc_size(&self) -> usize {
+        self.get_queue_size() as usize * DESCRIPTOR_LEN
     }
 
-    fn get_avail_size(&self, features: u64) -> u64 {
+    fn get_used_size(&self, features: u64) -> usize {
         let size = if virtio_has_feature(features, VIRTIO_F_RING_EVENT_IDX) {
-            2_u64
+            2
         } else {
-            0_u64
+            0
         };
 
-        size + VRING_FLAGS_AND_IDX_LEN
-            + (min(self.size, self.max_size) as u64) * (size_of::<u16>() as u64)
+        size + VRING_FLAGS_AND_IDX_LEN + (self.get_queue_size() as usize) * USEDELEM_LEN
+    }
+
+    fn get_avail_size(&self, features: u64) -> usize {
+        let size = if virtio_has_feature(features, VIRTIO_F_RING_EVENT_IDX) {
+            2
+        } else {
+            0
+        };
+
+        size + VRING_FLAGS_AND_IDX_LEN + (self.get_queue_size() as usize) * AVAILELEM_LEN
     }
 
     pub fn reset(&mut self) {
@@ -175,45 +178,45 @@ impl QueueConfig {
 
     pub fn set_addr_cache(
         &mut self,
-        mem_space: Arc<AddressSpace>,
+        mem_space: &AddressSpace,
         interrupt_cb: Arc<VirtioInterrupt>,
         features: u64,
         broken: &Arc<AtomicBool>,
     ) {
         self.addr_cache.desc_table_host =
-            if let Some((addr, size)) = mem_space.addr_cache_init(self.desc_table) {
+            if let Ok((addr, size)) = mem_space.translate_and_get_limit(self.desc_table) {
                 if size < self.get_desc_size() {
                     report_virtio_error(interrupt_cb.clone(), features, broken);
-                    0_u64
+                    0
                 } else {
                     addr
                 }
             } else {
-                0_u64
+                0
             };
 
         self.addr_cache.avail_ring_host =
-            if let Some((addr, size)) = mem_space.addr_cache_init(self.avail_ring) {
+            if let Ok((addr, size)) = mem_space.translate_and_get_limit(self.avail_ring) {
                 if size < self.get_avail_size(features) {
                     report_virtio_error(interrupt_cb.clone(), features, broken);
-                    0_u64
+                    0
                 } else {
                     addr
                 }
             } else {
-                0_u64
+                0
             };
 
         self.addr_cache.used_ring_host =
-            if let Some((addr, size)) = mem_space.addr_cache_init(self.used_ring) {
+            if let Ok((addr, size)) = mem_space.translate_and_get_limit(self.used_ring) {
                 if size < self.get_used_size(features) {
                     report_virtio_error(interrupt_cb.clone(), features, broken);
-                    0_u64
+                    0
                 } else {
                     addr
                 }
             } else {
-                0_u64
+                0
             };
     }
 }
@@ -242,7 +245,7 @@ impl ByteCode for SplitVringFlagsIdx {}
 
 struct DescInfo {
     /// The host virtual address of the descriptor table.
-    table_host: u64,
+    table_host: HostVirtAddr,
     /// The size of the descriptor table.
     size: u16,
     /// The index of the current descriptor table.
@@ -256,7 +259,7 @@ struct DescInfo {
 #[derive(Default, Clone, Copy)]
 pub struct SplitVringDesc {
     /// Address (guest-physical).
-    pub addr: u64,
+    pub addr: GuestPhysAddr,
     /// Length.
     pub len: u32,
     /// The flags as indicated above.
@@ -275,40 +278,38 @@ impl SplitVringDesc {
     /// * `queue_size` - Size of virtqueue.
     /// * `index` - Index of descriptor in the virqueue descriptor table.
     fn new(
-        sys_mem: &Arc<AddressSpace>,
-        desc_table_host: u64,
+        sys_mem: &AddressSpace,
+        desc_table_host: HostVirtAddr,
         queue_size: u16,
         index: u16,
         cache: &mut Option<RegionCache>,
     ) -> HyperResult<Self> {
         if index >= queue_size {
-            return Err(HyperError::PciError(VirtioError::QueueIndex(index, queue_size)));
+            return Err(HyperError::VirtioError(VirtioError::QueueIndex(index, queue_size)));
         }
 
         let desc_addr = desc_table_host
-            .checked_add(u64::from(index) * DESCRIPTOR_LEN)
-            .with_context(|| {
-                VirtioError::AddressOverflow(
-                    "creating a descriptor",
-                    desc_table_host,
-                    u64::from(index) * DESCRIPTOR_LEN,
-                )
-            })?;
+            .checked_add((index as usize) * DESCRIPTOR_LEN)
+            .ok_or(HyperError::VirtioError(VirtioError::AddressOverflow(
+                "creating a descriptor",
+                desc_table_host,
+                (index as usize) * DESCRIPTOR_LEN,
+            )))?;
         let desc = sys_mem
-            .read_object_direct::<SplitVringDesc>(desc_addr)
-            .with_context(|| VirtioError::ReadObjectErr("a descriptor", desc_addr))?;
+            .read_object_from_host_virt::<SplitVringDesc>(desc_addr)
+            .map_err(|_| HyperError::VirtioError(VirtioError::ReadObjectErr("a descriptor", desc_addr)))?;
 
         if desc.is_valid(sys_mem, queue_size, cache) {
             Ok(desc)
         } else {
-            Err(HyperError::PciError(VirtioError::QueueDescInvalid))
+            Err(HyperError::VirtioError(VirtioError::QueueDescInvalid))
         }
     }
 
     /// Return true if the descriptor is valid.
     fn is_valid(
         &self,
-        sys_mem: &Arc<AddressSpace>,
+        sys_mem: &AddressSpace,
         queue_size: u16,
         cache: &mut Option<RegionCache>,
     ) -> bool {
@@ -318,29 +319,32 @@ impl SplitVringDesc {
         }
         let mut miss_cached = true;
         if let Some(reg_cache) = cache {
-            let base = self.addr.0;
-            let offset = self.len as u64;
-            let end = match base.checked_add(offset) {
+            let base = self.addr;
+            let offset = self.len;
+            let end = match base.checked_add(offset as usize) {
                 Some(addr) => addr,
                 None => {
                     error!("The memory of descriptor is invalid, range overflows");
                     return false;
                 }
             };
-            if base > reg_cache.start && end < reg_cache.end {
+            if !reg_cache.out_of_range(base) && !reg_cache.out_of_range(end) {
                 miss_cached = false;
             }
         } else {
+            // TODO: add a `TranslatedRegion` in AddressSpace to replace the `RegionCache`.
+            /*
             let gotten_cache = sys_mem.get_region_cache(self.addr);
             if let Some(obtained_cache) = gotten_cache {
                 if obtained_cache.reg_type == RegionType::Ram {
                     *cache = gotten_cache;
                 }
-            }
+            } 
+            */
         }
 
         if miss_cached {
-            if let Err(ref e) = checked_offset_mem(sys_mem, self.addr, u64::from(self.len)) {
+            if let Err(ref e) = sys_mem.checked_offset_address(self.addr, self.len as usize) {
                 error!("The memory of descriptor is invalid, {:?} ", e);
                 return false;
             }
@@ -364,14 +368,14 @@ impl SplitVringDesc {
 
     /// Get the next descriptor in descriptor chain.
     fn next_desc(
-        sys_mem: &Arc<AddressSpace>,
-        desc_table_host: u64,
+        sys_mem: &AddressSpace,
+        desc_table_host: HostVirtAddr,
         queue_size: u16,
         index: u16,
         cache: &mut Option<RegionCache>,
     ) -> HyperResult<SplitVringDesc> {
         SplitVringDesc::new(sys_mem, desc_table_host, queue_size, index, cache)
-            .with_context(|| format!("Failed to find next descriptor {}", index))
+            // .with_context(|| format!("Failed to find next descriptor {}", index))
     }
 
     /// Check whether this descriptor is write-only or read-only.
@@ -389,8 +393,8 @@ impl SplitVringDesc {
     /// The len can be divided evenly by the size of descriptor and can not be zero.
     fn is_valid_indirect_desc(&self) -> bool {
         if self.len == 0
-            || u64::from(self.len) % DESCRIPTOR_LEN != 0
-            || u64::from(self.len) / DESCRIPTOR_LEN > u16::MAX as u64
+            || (self.len as usize) % DESCRIPTOR_LEN != 0
+            || (self.len as usize) / DESCRIPTOR_LEN > u16::MAX as usize
         {
             error!("The indirect descriptor is invalid, len: {}", self.len);
             return false;
@@ -404,12 +408,12 @@ impl SplitVringDesc {
 
     /// Get the num of descriptor in the table of indirect descriptor.
     fn get_desc_num(&self) -> u16 {
-        (u64::from(self.len) / DESCRIPTOR_LEN) as u16
+        ((self.len as usize) / DESCRIPTOR_LEN) as u16
     }
 
     /// Get element from descriptor chain.
     fn get_element(
-        sys_mem: &Arc<AddressSpace>,
+        sys_mem: &AddressSpace,
         desc_info: &DescInfo,
         cache: &mut Option<RegionCache>,
         elem: &mut Element,
@@ -430,22 +434,26 @@ impl SplitVringDesc {
 
             if desc.is_indirect_desc() {
                 if !desc.is_valid_indirect_desc() {
-                    return Err(HyperError::PciError(VirtioError::QueueDescInvalid));
+                    return Err(HyperError::VirtioError(VirtioError::QueueDescInvalid));
                 }
                 if !indirect {
                     indirect = true;
                 } else {
                     error!("Found two indirect descriptor elem in one request");
                 }
+                /*
                 (desc_table_host, _) = sys_mem
                     .get_host_address_from_cache(desc.addr, cache)
                     .with_context(|| "Failed to get descriptor table entry host address")?;
+                 */
+                desc_table_host = sys_mem.translate(desc.addr)?;
                 queue_size = desc.get_desc_num();
                 desc = Self::next_desc(sys_mem, desc_table_host, queue_size, 0, cache)?;
                 desc_size = elem
                     .desc_num
                     .checked_add(queue_size)
-                    .with_context(|| "The chained desc number overflows")?;
+                    .ok_or(HyperError::VirtioError(VirtioError::QueueDescInvalid))?;
+                    // .with_context(|| "The chained desc number overflows")?;
                 continue;
             }
 
@@ -524,45 +532,41 @@ impl SplitVring {
     }
 
     /// Get the flags and idx of the available ring from guest memory.
-    fn get_avail_flags_idx(&self, sys_mem: &Arc<AddressSpace>) -> HyperResult<SplitVringFlagsIdx> {
+    fn get_avail_flags_idx(&self, sys_mem: &AddressSpace) -> HyperResult<SplitVringFlagsIdx> {
         sys_mem
-            .read_object_direct::<SplitVringFlagsIdx>(self.addr_cache.avail_ring_host)
-            .with_context(|| {
-                VirtioError::ReadObjectErr("avail flags idx", self.avail_ring.raw_value())
-            })
+            .read_object_from_host_virt::<SplitVringFlagsIdx>(self.addr_cache.avail_ring_host)
+            .map_err(|_| HyperError::VirtioError(VirtioError::ReadObjectErr("avail flags idx", self.avail_ring)))
     }
 
     /// Get the idx of the available ring from guest memory.
-    fn get_avail_idx(&self, sys_mem: &Arc<AddressSpace>) -> HyperResult<u16> {
+    fn get_avail_idx(&self, sys_mem: &AddressSpace) -> HyperResult<u16> {
         let flags_idx = self.get_avail_flags_idx(sys_mem)?;
         Ok(flags_idx.idx)
     }
 
     /// Get the flags of the available ring from guest memory.
-    fn get_avail_flags(&self, sys_mem: &Arc<AddressSpace>) -> HyperResult<u16> {
+    fn get_avail_flags(&self, sys_mem: &AddressSpace) -> HyperResult<u16> {
         let flags_idx = self.get_avail_flags_idx(sys_mem)?;
         Ok(flags_idx.flags)
     }
 
     /// Get the flags and idx of the used ring from guest memory.
-    fn get_used_flags_idx(&self, sys_mem: &Arc<AddressSpace>) -> HyperResult<SplitVringFlagsIdx> {
+    fn get_used_flags_idx(&self, sys_mem: &AddressSpace) -> HyperResult<SplitVringFlagsIdx> {
         // Make sure the idx read from sys_mem is new.
         fence(Ordering::SeqCst);
         sys_mem
-            .read_object_direct::<SplitVringFlagsIdx>(self.addr_cache.used_ring_host)
-            .with_context(|| {
-                VirtioError::ReadObjectErr("used flags idx", self.used_ring.raw_value())
-            })
+            .read_object_from_host_virt::<SplitVringFlagsIdx>(self.addr_cache.used_ring_host)
+            .map_err(|_| HyperError::VirtioError(VirtioError::ReadObjectErr("used flags idx", self.used_ring)))
     }
 
     /// Get the index of the used ring from guest memory.
-    fn get_used_idx(&self, sys_mem: &Arc<AddressSpace>) -> HyperResult<u16> {
+    fn get_used_idx(&self, sys_mem: &AddressSpace) -> HyperResult<u16> {
         let flag_idx = self.get_used_flags_idx(sys_mem)?;
         Ok(flag_idx.idx)
     }
 
     /// Set the used flags to suppress virtqueue notification or not
-    fn set_used_flags(&self, sys_mem: &Arc<AddressSpace>, suppress: bool) -> HyperResult<()> {
+    fn set_used_flags(&self, sys_mem: &AddressSpace, suppress: bool) -> HyperResult<()> {
         let mut flags_idx = self.get_used_flags_idx(sys_mem)?;
 
         if suppress {
@@ -571,59 +575,63 @@ impl SplitVring {
             flags_idx.flags &= !VRING_USED_F_NO_NOTIFY;
         }
         sys_mem
-            .write_object_direct::<SplitVringFlagsIdx>(&flags_idx, self.addr_cache.used_ring_host)
+            .write_object_to_host_virt::<SplitVringFlagsIdx>(self.addr_cache.used_ring_host, &flags_idx)?;
+            /*
             .with_context(|| {
                 format!(
                     "Failed to set used flags, used_ring: 0x{:X}",
-                    self.used_ring.raw_value()
+                    self.used_ring
                 )
             })?;
+             */
         // Make sure the data has been set.
         fence(Ordering::SeqCst);
         Ok(())
     }
 
     /// Set the avail idx to the field of the event index for the available ring.
-    fn set_avail_event(&self, sys_mem: &Arc<AddressSpace>, event_idx: u16) -> HyperResult<()> {
+    fn set_avail_event(&self, sys_mem: &AddressSpace, event_idx: u16) -> HyperResult<()> {
         //trace::virtqueue_set_avail_event(self as *const _ as u64, event_idx);
         let avail_event_offset =
-            VRING_FLAGS_AND_IDX_LEN + USEDELEM_LEN * u64::from(self.actual_size());
+            VRING_FLAGS_AND_IDX_LEN + USEDELEM_LEN * (self.actual_size() as usize);
 
         sys_mem
-            .write_object_direct(
-                &event_idx,
+            .write_object_to_host_virt(
                 self.addr_cache.used_ring_host + avail_event_offset,
-            )
+                &event_idx,
+            )?;
+            /*
             .with_context(|| {
                 format!(
                     "Failed to set avail event idx, used_ring: 0x{:X}, offset: {}",
-                    self.used_ring.raw_value(),
+                    self.used_ring,
                     avail_event_offset,
                 )
             })?;
+             */
         // Make sure the data has been set.
         fence(Ordering::SeqCst);
         Ok(())
     }
 
     /// Get the event index of the used ring from guest memory.
-    fn get_used_event(&self, sys_mem: &Arc<AddressSpace>) -> HyperResult<u16> {
+    fn get_used_event(&self, sys_mem: &AddressSpace) -> HyperResult<u16> {
         let used_event_offset =
-            VRING_FLAGS_AND_IDX_LEN + AVAILELEM_LEN * u64::from(self.actual_size());
+            VRING_FLAGS_AND_IDX_LEN + AVAILELEM_LEN * (self.actual_size() as usize);
         // Make sure the event idx read from sys_mem is new.
         fence(Ordering::SeqCst);
         // The GPA of avail_ring_host with avail table length has been checked in
         // is_invalid_memory which must not be overflowed.
         let used_event_addr = self.addr_cache.avail_ring_host + used_event_offset;
         let used_event = sys_mem
-            .read_object_direct::<u16>(used_event_addr)
-            .with_context(|| VirtioError::ReadObjectErr("used event id", used_event_addr))?;
+            .read_object_from_host_virt::<u16>(used_event_addr)?;
+            // .with_context(|| VirtioError::ReadObjectErr("used event id", used_event_addr))?;
 
         Ok(used_event)
     }
 
     /// Return true if VRING_AVAIL_F_NO_INTERRUPT is set.
-    fn is_avail_ring_no_interrupt(&self, sys_mem: &Arc<AddressSpace>) -> bool {
+    fn is_avail_ring_no_interrupt(&self, sys_mem: &AddressSpace) -> bool {
         match self.get_avail_flags(sys_mem) {
             Ok(avail_flags) => (avail_flags & VRING_AVAIL_F_NO_INTERRUPT) != 0,
             Err(ref e) => {
@@ -637,7 +645,7 @@ impl SplitVring {
     }
 
     /// Return true if it's required to trigger interrupt for the used vring.
-    fn used_ring_need_event(&mut self, sys_mem: &Arc<AddressSpace>) -> bool {
+    fn used_ring_need_event(&mut self, sys_mem: &AddressSpace) -> bool {
         let old = self.last_signal_used;
         let new = match self.get_used_idx(sys_mem) {
             Ok(used_idx) => Wrapping(used_idx),
@@ -661,23 +669,18 @@ impl SplitVring {
         !valid || (new - used_event_idx - Wrapping(1)) < (new - old)
     }
 
-    fn is_overlap(
-        start1: u64,
-        end1: u64,
-        start2: u64,
-        end2: u64,
-    ) -> bool {
+    fn is_overlap(start1: GuestPhysAddr, end1: GuestPhysAddr, start2: GuestPhysAddr, end2: GuestPhysAddr) -> bool {
         !(start1 >= end2 || start2 >= end1)
     }
 
-    fn is_invalid_memory(&self, sys_mem: &Arc<AddressSpace>, actual_size: u64) -> bool {
+    fn is_invalid_memory(&self, sys_mem: &AddressSpace, actual_size: usize) -> bool {
         let desc_table_end =
-            match checked_offset_mem(sys_mem, self.desc_table, DESCRIPTOR_LEN * actual_size) {
+            match sys_mem.checked_offset_address(self.desc_table, DESCRIPTOR_LEN * actual_size) {
                 Ok(addr) => addr,
                 Err(ref e) => {
                     error!(
                         "descriptor table is out of bounds: start:0x{:X} size:{} {:?}",
-                        self.desc_table.raw_value(),
+                        self.desc_table,
                         DESCRIPTOR_LEN * actual_size,
                         e
                     );
@@ -685,16 +688,15 @@ impl SplitVring {
                 }
             };
 
-        let desc_avail_end = match checked_offset_mem(
-            sys_mem,
-            self.avail_ring,
+        let desc_avail_end = match sys_mem.checked_offset_address(
+            self.avail_ring, 
             VRING_AVAIL_LEN_EXCEPT_AVAILELEM + AVAILELEM_LEN * actual_size,
         ) {
             Ok(addr) => addr,
             Err(ref e) => {
                 error!(
                     "avail ring is out of bounds: start:0x{:X} size:{} {:?}",
-                    self.avail_ring.raw_value(),
+                    self.avail_ring,
                     VRING_AVAIL_LEN_EXCEPT_AVAILELEM + AVAILELEM_LEN * actual_size,
                     e
                 );
@@ -702,8 +704,7 @@ impl SplitVring {
             }
         };
 
-        let desc_used_end = match checked_offset_mem(
-            sys_mem,
+        let desc_used_end = match sys_mem.checked_offset_address(
             self.used_ring,
             VRING_USED_LEN_EXCEPT_USEDELEM + USEDELEM_LEN * actual_size,
         ) {
@@ -711,7 +712,7 @@ impl SplitVring {
             Err(ref e) => {
                 error!(
                     "used ring is out of bounds: start:0x{:X} size:{} {:?}",
-                    self.used_ring.raw_value(),
+                    self.used_ring,
                     VRING_USED_LEN_EXCEPT_USEDELEM + USEDELEM_LEN * actual_size,
                     e,
                 );
@@ -736,26 +737,26 @@ impl SplitVring {
             desc_used_end,
         ) {
             error!("The memory of descriptor table: 0x{:X}, avail ring: 0x{:X} or used ring: 0x{:X} is overlapped. queue size:{}",
-                   self.desc_table.raw_value(), self.avail_ring.raw_value(), self.used_ring.raw_value(), actual_size);
+                   self.desc_table, self.avail_ring, self.used_ring, actual_size);
             return true;
         }
 
-        if self.desc_table.0 & 0xf != 0 {
+        if self.desc_table & 0xf != 0 {
             error!(
                 "descriptor table: 0x{:X} is not aligned",
-                self.desc_table.raw_value()
+                self.desc_table
             );
             true
-        } else if self.avail_ring.0 & 0x1 != 0 {
+        } else if self.avail_ring & 0x1 != 0 {
             error!(
                 "avail ring: 0x{:X} is not aligned",
-                self.avail_ring.raw_value()
+                self.avail_ring
             );
             true
-        } else if self.used_ring.0 & 0x3 != 0 {
+        } else if self.used_ring & 0x3 != 0 {
             error!(
                 "used ring: 0x{:X} is not aligned",
-                self.used_ring.raw_value()
+                self.used_ring
             );
             true
         } else {
@@ -765,20 +766,18 @@ impl SplitVring {
 
     fn get_desc_info(
         &mut self,
-        sys_mem: &Arc<AddressSpace>,
+        sys_mem: &AddressSpace,
         next_avail: Wrapping<u16>,
         features: u64,
     ) -> HyperResult<DescInfo> {
         let index_offset =
-            VRING_FLAGS_AND_IDX_LEN + AVAILELEM_LEN * u64::from(next_avail.0 % self.actual_size());
+            VRING_FLAGS_AND_IDX_LEN + AVAILELEM_LEN * ((next_avail.0 % self.actual_size()) as usize);
         // The GPA of avail_ring_host with avail table length has been checked in
         // is_invalid_memory which must not be overflowed.
         let desc_index_addr = self.addr_cache.avail_ring_host + index_offset;
         let desc_index = sys_mem
-            .read_object_direct::<u16>(desc_index_addr)
-            .with_context(|| {
-                VirtioError::ReadObjectErr("the index of descriptor", desc_index_addr)
-            })?;
+            .read_object_from_host_virt::<u16>(desc_index_addr)
+            .map_err(|_| HyperError::VirtioError(VirtioError::ReadObjectErr("the index of descriptor", desc_index_addr)))?;
 
         let desc = SplitVringDesc::new(
             sys_mem,
@@ -790,8 +789,8 @@ impl SplitVring {
 
         // Suppress queue notification related to current processing desc chain.
         if virtio_has_feature(features, VIRTIO_F_RING_EVENT_IDX) {
-            self.set_avail_event(sys_mem, (next_avail + Wrapping(1)).0)
-                .with_context(|| "Failed to set avail event for popping avail ring")?;
+            self.set_avail_event(sys_mem, (next_avail + Wrapping(1)).0)?;
+                // .with_context(|| "Failed to set avail event for popping avail ring")?;
         }
 
         Ok(DescInfo {
@@ -804,13 +803,15 @@ impl SplitVring {
 
     fn get_vring_element(
         &mut self,
-        sys_mem: &Arc<AddressSpace>,
+        sys_mem: &AddressSpace,
         features: u64,
         elem: &mut Element,
     ) -> HyperResult<()> {
         let desc_info = self.get_desc_info(sys_mem, self.next_avail, features)?;
 
-        SplitVringDesc::get_element(sys_mem, &desc_info, &mut self.cache, elem).with_context(
+        SplitVringDesc::get_element(sys_mem, &desc_info, &mut self.cache, elem)?;
+        /*
+        .with_context(
             || {
                 format!(
                     "Failed to get element from descriptor chain {}, table addr: 0x{:X}, size: {}",
@@ -818,6 +819,7 @@ impl SplitVring {
                 )
             },
         )?;
+         */
         self.next_avail += Wrapping(1);
 
         Ok(())
@@ -829,8 +831,8 @@ impl VringOps for SplitVring {
         self.ready
     }
 
-    fn is_valid(&self, sys_mem: &Arc<AddressSpace>) -> bool {
-        let size = u64::from(self.actual_size());
+    fn is_valid(&self, sys_mem: &AddressSpace) -> bool {
+        let size = (self.actual_size() as usize);
         if !self.ready {
             error!("The configuration of vring is not ready\n");
             false
@@ -846,17 +848,17 @@ impl VringOps for SplitVring {
         }
     }
 
-    fn pop_avail(&mut self, sys_mem: &Arc<AddressSpace>, features: u64) -> HyperResult<Element> {
+    fn pop_avail(&mut self, sys_mem: &AddressSpace, features: u64) -> HyperResult<Element> {
         let mut element = Element::new(0);
-        if !self.is_enabled() || self.avail_ring_len(sys_mem)? == 0 {
+        if !self.is_enabled() || (self.avail_ring_len(sys_mem)?) == 0 {
             return Ok(element);
         }
 
         // Make sure descriptor read does not bypass avail index read.
         fence(Ordering::Acquire);
 
-        self.get_vring_element(sys_mem, features, &mut element)
-            .with_context(|| "Failed to get vring element")?;
+        self.get_vring_element(sys_mem, features, &mut element)?;
+            // .with_context(|| "Failed to get vring element")?;
 
         /*
             trace::virtqueue_pop_avail(
@@ -873,12 +875,12 @@ impl VringOps for SplitVring {
         self.next_avail -= Wrapping(1);
     }
 
-    fn add_used(&mut self, sys_mem: &Arc<AddressSpace>, index: u16, len: u32) -> HyperResult<()> {
+    fn add_used(&mut self, sys_mem: &AddressSpace, index: u16, len: u32) -> HyperResult<()> {
         if index >= self.size {
-            return Err(HyperError::PciError(VirtioError::QueueIndex(index, self.size)));
+            return Err(HyperError::VirtioError(VirtioError::QueueIndex(index, self.size)));
         }
 
-        let next_used = u64::from(self.next_used.0 % self.actual_size());
+        let next_used = (self.next_used.0 % self.actual_size()) as usize;
         //trace::virtqueue_add_used(&*self as *const _ as u64, next_used, index, len);
         let used_elem_addr =
             self.addr_cache.used_ring_host + VRING_FLAGS_AND_IDX_LEN + next_used * USEDELEM_LEN;
@@ -887,18 +889,18 @@ impl VringOps for SplitVring {
             len,
         };
         sys_mem
-            .write_object_direct::<UsedElem>(&used_elem, used_elem_addr)
-            .with_context(|| "Failed to write object for used element")?;
+            .write_object_to_host_virt::<UsedElem>(used_elem_addr, &used_elem)?;
+            // .with_context(|| "Failed to write object for used element")?;
         // Make sure used element is filled before updating used idx.
         fence(Ordering::Release);
 
         self.next_used += Wrapping(1);
         sys_mem
-            .write_object_direct(
-                &(self.next_used.0),
+            .write_object_to_host_virt(
                 self.addr_cache.used_ring_host + VRING_IDX_POSITION,
-            )
-            .with_context(|| "Failed to write next used idx")?;
+                &(self.next_used.0),
+            )?;
+            // .with_context(|| "Failed to write next used idx")?;
         // Make sure used index is exposed before notifying guest.
         fence(Ordering::SeqCst);
 
@@ -909,7 +911,7 @@ impl VringOps for SplitVring {
         Ok(())
     }
 
-    fn should_notify(&mut self, sys_mem: &Arc<AddressSpace>, features: u64) -> bool {
+    fn should_notify(&mut self, sys_mem: &AddressSpace, features: u64) -> bool {
         if virtio_has_feature(features, VIRTIO_F_RING_EVENT_IDX) {
             self.used_ring_need_event(sys_mem)
         } else {
@@ -919,7 +921,7 @@ impl VringOps for SplitVring {
 
     fn suppress_queue_notify(
         &mut self,
-        sys_mem: &Arc<AddressSpace>,
+        sys_mem: &AddressSpace,
         features: u64,
         suppress: bool,
     ) -> HyperResult<()> {
@@ -942,17 +944,17 @@ impl VringOps for SplitVring {
     }
 
     /// The number of descriptor chains in the available ring.
-    fn avail_ring_len(&mut self, sys_mem: &Arc<AddressSpace>) -> HyperResult<u16> {
+    fn avail_ring_len(&mut self, sys_mem: &AddressSpace) -> HyperResult<u16> {
         let avail_idx = self.get_avail_idx(sys_mem).map(Wrapping)?;
 
         Ok((avail_idx - self.next_avail).0)
     }
 
-    fn get_avail_idx(&self, sys_mem: &Arc<AddressSpace>) -> HyperResult<u16> {
+    fn get_avail_idx(&self, sys_mem: &AddressSpace) -> HyperResult<u16> {
         SplitVring::get_avail_idx(self, sys_mem)
     }
 
-    fn get_used_idx(&self, sys_mem: &Arc<AddressSpace>) -> HyperResult<u16> {
+    fn get_used_idx(&self, sys_mem: &AddressSpace) -> HyperResult<u16> {
         SplitVring::get_used_idx(self, sys_mem)
     }
 
@@ -962,7 +964,7 @@ impl VringOps for SplitVring {
 
     fn get_avail_bytes(
         &mut self,
-        sys_mem: &Arc<AddressSpace>,
+        sys_mem: &AddressSpace,
         max_size: usize,
         is_in: bool,
     ) -> HyperResult<usize> {
@@ -978,7 +980,9 @@ impl VringOps for SplitVring {
             let desc_info = self.get_desc_info(sys_mem, avail_idx, 0)?;
 
             let mut elem = Element::new(0);
-            SplitVringDesc::get_element(sys_mem, &desc_info, &mut self.cache, &mut elem).with_context(
+            SplitVringDesc::get_element(sys_mem, &desc_info, &mut self.cache, &mut elem)?;
+            /*
+            .with_context(
                 || {
                     format!(
                         "Failed to get element from descriptor chain {}, table addr: 0x{:X}, size: {}",
@@ -986,6 +990,7 @@ impl VringOps for SplitVring {
                     )
                 },
             )?;
+             */
 
             for e in match is_in {
                 true => elem.in_iovec,

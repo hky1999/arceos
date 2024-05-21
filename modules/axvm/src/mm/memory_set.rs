@@ -322,6 +322,11 @@ impl GuestPhysMemorySet {
         let limit = region.gpa + region.size - gpa;
         Ok((hpa, limit))
     }
+
+    pub fn get_limit(&self, gpa: GuestPhysAddr) -> HyperResult<usize> {
+        let region = self.lookup_region(gpa)?;
+        Ok(region.gpa + region.size - gpa)
+    }
 }
 
 impl Drop for GuestPhysMemorySet {
