@@ -295,7 +295,32 @@ impl GuestPhysMemorySet {
     }
 
     pub fn translate(&self, gpa: GuestPhysAddr) -> HyperResult<HostPhysAddr> {
+        self.translate_by_walk(gpa)
+    }
+
+    pub fn translate_by_walk(&self, gpa: GuestPhysAddr) -> HyperResult<HostPhysAddr> {
         self.npt.translate(gpa)
+    }
+
+    pub fn lookup_region(&self, gpa: GuestPhysAddr) -> HyperResult<&GuestMemoryRegion> {
+        let candidate = self.regions.range(..=gpa).next_back();
+        match candidate {
+            Some((_, region)) => {
+                if gpa < region.gpa + region.size {
+                    Ok(region)
+                } else {
+                    Err(Error::NotFound)
+                }
+            }
+            None => Err(Error::NotFound),
+        }
+    }
+
+    pub fn translate_and_get_limit(&self, gpa: GuestPhysAddr) -> HyperResult<(HostPhysAddr, usize)> {
+        let region = self.lookup_region(gpa)?;
+        let hpa = region.target(gpa);
+        let limit = region.gpa + region.size - gpa;
+        Ok((hpa, limit))
     }
 }
 
@@ -317,7 +342,7 @@ impl Debug for GuestPhysMemorySet {
             &self.nest_page_table_root()
         )?;
         for (_addr, region) in &self.regions {
-            write!(f, "\t{}\n", region)?;
+            write!(f, "\t{:?}\n", region)?;
         }
         Ok(())
     }
