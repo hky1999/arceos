@@ -611,22 +611,22 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                     .map(|config| config.vector = val)?;
             }
             COMMON_Q_DESCLO_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.desc_table = config.desc_table | u64::from(value);
+                config.desc_table = config.desc_table | (value as usize);
             })?,
             COMMON_Q_DESCHI_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.desc_table = config.desc_table | (u64::from(value) << 32);
+                config.desc_table = config.desc_table | ((value as usize) << 32);
             })?,
             COMMON_Q_AVAILLO_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.avail_ring = config.avail_ring | u64::from(value);
+                config.avail_ring = config.avail_ring | (value as usize);
             })?,
             COMMON_Q_AVAILHI_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.avail_ring = config.avail_ring | (u64::from(value) << 32);
+                config.avail_ring = config.avail_ring | ((value as usize) << 32);
             })?,
             COMMON_Q_USEDLO_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.used_ring = config.used_ring | u64::from(value);
+                config.used_ring = config.used_ring | (value as usize);
             })?,
             COMMON_Q_USEDHI_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.used_ring = config.used_ring | (u64::from(value) << 32);
+                config.used_ring = config.used_ring | ((value as usize) << 32);
             })?,
             _ => {
                 return Err(HyperError::PciError(PciError::PciRegister(offset)));
