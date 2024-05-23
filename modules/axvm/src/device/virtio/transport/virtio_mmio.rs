@@ -102,11 +102,14 @@ impl HostNotifyInfo {
 
 /// The state of virtio-mmio device.
 #[repr(C)]
-#[derive(Copy, Clone, Desc, ByteCode)]
+#[derive(Copy, Clone, ByteCode)]
+// #[derive(Desc, ByteCode)]
 #[desc_version(compat_version = "0.1.0")]
 pub struct VirtioMmioState {
     virtio_base: VirtioBaseState,
 }
+
+impl ByteCode for VirtioMmioState {}
 
 /// virtio-mmio device structure.
 pub struct VirtioMmioDevice {

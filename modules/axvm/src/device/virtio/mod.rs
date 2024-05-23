@@ -1,5 +1,4 @@
 pub mod device;
-
 mod queue;
 mod transport;
 

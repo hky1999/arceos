@@ -22,6 +22,7 @@ ranges = "0.3.3"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 fdt = { version = "0.1.5" }
 arrayvec = { version = "0.7.2", default-features = false }
+anyhow = { version = "1.0", default-features = false }
 hashbrown = "0.14"
 
 # ax modules
