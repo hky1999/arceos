@@ -295,6 +295,7 @@ name = "axerrno"
 version = "0.1.0"
 dependencies = [
  "log",
+ "x86",
 ]
 
 [[package]]
@@ -1921,6 +1922,7 @@ dependencies = [
  "axhal",
  "axstd",
  "axvm",
+ "log",
 ]
 
 [[package]]

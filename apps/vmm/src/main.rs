@@ -1,9 +1,11 @@
 #![cfg_attr(feature = "axstd", no_std)]
 #![cfg_attr(feature = "axstd", no_main)]
 
-#[macro_use]
 #[cfg(feature = "axstd")]
 extern crate axstd as std;
+
+#[macro_use]
+extern crate log;
 
 mod hal;
 
@@ -13,10 +15,15 @@ use self::hal::AxvmHalImpl;
 
 #[cfg_attr(feature = "axstd", no_mangle)]
 fn main() {
-    println!("Starting virtualization...");
-    println!("Hardware support: {:?}", axvm::has_hardware_support());
+    info!("Starting virtualization...");
+    info!("Hardware support: {:?}", axvm::has_hardware_support());
 
     let mut percpu = AxvmPerCpu::<AxvmHalImpl>::new(0);
-    let res = percpu.hardware_enable();
-    println!("Hardware enable: {:?}", res);
+    percpu
+        .hardware_enable()
+        .expect("Failed to enable virtualization");
+
+    let mut vcpu = percpu.create_vcpu().unwrap();
+    info!("{:#x?}", vcpu);
+    vcpu.run();
 }

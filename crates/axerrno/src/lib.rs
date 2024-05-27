@@ -232,6 +232,12 @@ impl TryFrom<i32> for AxError {
     }
 }
 
+impl From<x86::vmx::VmFail> for AxError {
+    fn from(err: x86::vmx::VmFail) -> Self {
+        ax_err_type!(BadState, format_args!("VMX instruction failed: {:?}", err))
+    }
+}
+
 impl fmt::Display for AxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
