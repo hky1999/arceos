@@ -10,5 +10,6 @@ authors = ["Keyang Hu <976929993@qq.com>"]
 log = "0.4"
 axstd = { path = "../../ulib/axstd", features = ["alloc"], optional = true }
 axvm = { path = "../../crates/axvm" }
+axerrno = { path = "../../crates/axerrno" }
 axalloc = { path = "../../modules/axalloc" }
 axhal = { path = "../../modules/axhal" }
