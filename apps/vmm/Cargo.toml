@@ -8,8 +8,18 @@ authors = ["Keyang Hu <976929993@qq.com>"]
 
 [dependencies]
 log = "0.4"
-axstd = { path = "../../ulib/axstd", features = ["alloc"], optional = true }
+axstd = { path = "../../ulib/axstd", features = [
+    "alloc",
+    "paging",
+], optional = true }
 axvm = { path = "../../crates/axvm" }
 axerrno = { path = "../../crates/axerrno" }
 axalloc = { path = "../../modules/axalloc" }
 axhal = { path = "../../modules/axhal" }
+page_table_entry = { path = "../../crates/page_table_entry" }
+memory_addr = { path = "../../crates/memory_addr" }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86 = "0.52"
+x86_64 = "0.14"
+raw-cpuid = "11.0"
