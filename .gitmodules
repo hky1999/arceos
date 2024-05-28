@@ -1,0 +1,3 @@
+[submodule "apps/vmm_guest/nimbos"]
+	path = apps/vmm_guest/nimbos
+	url = https://github.com/equation314/nimbos.git

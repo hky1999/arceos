@@ -46,6 +46,8 @@ NET ?= n
 GRAPHIC ?= n
 BUS ?= mmio
 
+VMM ?= n
+
 DISK_IMG ?= disk.img
 QEMU_LOG ?= n
 NET_DUMP ?= n
@@ -153,6 +155,9 @@ APP_NAME := $(shell basename $(APP))
 LD_SCRIPT := $(CURDIR)/modules/axhal/linker_$(PLATFORM_NAME).lds
 OUT_ELF := $(OUT_DIR)/$(APP_NAME)_$(PLATFORM_NAME).elf
 OUT_BIN := $(OUT_DIR)/$(APP_NAME)_$(PLATFORM_NAME).bin
+
+BIOS_IMG ?= apps/vmm_guest/bios/out/rvm-bios.bin
+GUEST_IMG ?= apps/vmm_guest/nimbos/kernel/target/x86_64/release/nimbos.bin
 
 all: build
 

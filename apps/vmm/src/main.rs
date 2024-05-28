@@ -17,8 +17,8 @@ mod hal;
 mod vmexit;
 
 use axerrno::AxResult;
-use axhal::mem::virt_to_phys;
-use axvm::{AxvmPerCpu, GuestPhysAddr, HostVirtAddr};
+use axhal::mem::{phys_to_virt, virt_to_phys};
+use axvm::{AxvmPerCpu, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use page_table_entry::MappingFlags;
 
 use self::gconfig::*;
@@ -37,44 +37,53 @@ fn gpa_as_mut_ptr(guest_paddr: GuestPhysAddr) -> *mut u8 {
     host_vaddr as *mut u8
 }
 
-fn setup_guest_page_table() {
-    use x86_64::structures::paging::{PageTable, PageTableFlags as PTF};
-    let pt1 = unsafe { &mut *(gpa_as_mut_ptr(GUEST_PT1) as *mut PageTable) };
-    let pt2 = unsafe { &mut *(gpa_as_mut_ptr(GUEST_PT2) as *mut PageTable) };
-    // identity mapping
-    pt1[0].set_addr(
-        x86_64::PhysAddr::new(GUEST_PT2 as _),
-        PTF::PRESENT | PTF::WRITABLE,
-    );
-    pt2[0].set_addr(
-        x86_64::PhysAddr::new(0),
-        PTF::PRESENT | PTF::WRITABLE | PTF::HUGE_PAGE,
-    );
+fn load_guest_image(hpa: HostPhysAddr, load_gpa: GuestPhysAddr, size: usize) {
+    let image_ptr = phys_to_virt(hpa).as_ptr();
+    let image = unsafe { core::slice::from_raw_parts(image_ptr, size) };
+    unsafe {
+        core::slice::from_raw_parts_mut(gpa_as_mut_ptr(load_gpa), size).copy_from_slice(image)
+    }
 }
 
 fn setup_gpm() -> AxResult<GuestPhysMemorySet> {
-    setup_guest_page_table();
-
-    // copy guest code
-    unsafe {
-        core::ptr::copy_nonoverlapping(
-            test_guest as usize as *const u8,
-            gpa_as_mut_ptr(GUEST_ENTRY),
-            0x100,
-        );
-    }
+    // copy BIOS and guest images
+    load_guest_image(BIOS_PADDR, BIOS_ENTRY, BIOS_SIZE);
+    load_guest_image(GUEST_IMAGE_PADDR, GUEST_ENTRY, GUEST_IMAGE_SIZE);
 
     // create nested page table and add mapping
     let mut gpm = GuestPhysMemorySet::new()?;
-    let guest_memory_regions = [GuestMemoryRegion {
-        // RAM
-        gpa: GUEST_PHYS_MEMORY_BASE,
-        hpa: virt_to_phys(HostVirtAddr::from(
-            gpa_as_mut_ptr(GUEST_PHYS_MEMORY_BASE) as usize
-        )),
-        size: GUEST_PHYS_MEMORY_SIZE,
-        flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::EXECUTE,
-    }];
+    let guest_memory_regions = [
+        GuestMemoryRegion {
+            // RAM
+            gpa: GUEST_PHYS_MEMORY_BASE,
+            hpa: virt_to_phys(HostVirtAddr::from(
+                gpa_as_mut_ptr(GUEST_PHYS_MEMORY_BASE) as usize
+            )),
+            size: GUEST_PHYS_MEMORY_SIZE,
+            flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::EXECUTE,
+        },
+        GuestMemoryRegion {
+            // IO APIC
+            gpa: 0xfec0_0000,
+            hpa: HostPhysAddr::from(0xfec0_0000),
+            size: 0x1000,
+            flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::DEVICE,
+        },
+        GuestMemoryRegion {
+            // HPET
+            gpa: 0xfed0_0000,
+            hpa: HostPhysAddr::from(0xfed0_0000),
+            size: 0x1000,
+            flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::DEVICE,
+        },
+        GuestMemoryRegion {
+            // Local APIC
+            gpa: 0xfee0_0000,
+            hpa: HostPhysAddr::from(0xfee0_0000),
+            size: 0x1000,
+            flags: MappingFlags::READ | MappingFlags::WRITE | MappingFlags::DEVICE,
+        },
+    ];
     for r in guest_memory_regions.into_iter() {
         trace!("{:#x?}", r);
         gpm.map_region(r.into())?;
@@ -93,30 +102,14 @@ fn main() {
         .expect("Failed to enable virtualization");
 
     let gpm = setup_gpm().expect("Failed to set guest physical memory set");
-    println!("{:#x?}", gpm);
+    debug!("{:#x?}", gpm);
     let mut vcpu = percpu
         .create_vcpu(GUEST_ENTRY, gpm.nest_page_table_root())
         .expect("Failed to create vcpu");
-    vcpu.set_page_table_root(GUEST_PT1);
-    vcpu.set_stack_pointer(GUEST_STACK_TOP);
-    println!("{:#x?}", vcpu);
+
+    debug!("{:#x?}", vcpu);
 
     println!("Running guest...");
 
     vcpu.run();
-}
-
-unsafe extern "C" fn test_guest() -> ! {
-    for i in 0..100 {
-        core::arch::asm!(
-            "vmcall",
-            inout("rax") i => _,
-            in("rdi") 2,
-            in("rsi") 3,
-            in("rdx") 3,
-            in("rcx") 3,
-        );
-    }
-    core::arch::asm!("mov qword ptr [$0xffff233], $2333"); // panic
-    loop {}
 }

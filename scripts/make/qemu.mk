@@ -77,6 +77,10 @@ else
   qemu_args-$(ACCEL) += -cpu host -accel kvm
 endif
 
+qemu_args-$(VMM) += \
+	-device loader,addr=0x4000000,file=$(BIOS_IMG),force-raw=on \
+	-device loader,addr=0x4001000,file=$(GUEST_IMG),force-raw=on
+
 define run_qemu
   @printf "    $(CYAN_C)Running$(END_C) on qemu...\n"
   $(call run_cmd,$(QEMU),$(qemu_args-y))

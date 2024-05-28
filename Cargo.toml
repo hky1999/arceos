@@ -70,9 +70,10 @@ members = [
     "apps/task/sleep",
     "apps/task/yield",
     "apps/task/priority",
-    "apps/task/tls", 
+    "apps/task/tls",
     "apps/vmm",
 ]
+exclude = ["apps/vmm_guest"]
 
 [profile.release]
 lto = true
