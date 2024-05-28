@@ -17,7 +17,7 @@ mod hal;
 mod vmexit;
 
 use axerrno::AxResult;
-use axhal::mem::{phys_to_virt, virt_to_phys};
+use axhal::mem::virt_to_phys;
 use axvm::{AxvmPerCpu, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use page_table_entry::MappingFlags;
 
@@ -37,18 +37,21 @@ fn gpa_as_mut_ptr(guest_paddr: GuestPhysAddr) -> *mut u8 {
     host_vaddr as *mut u8
 }
 
-fn load_guest_image(hpa: HostPhysAddr, load_gpa: GuestPhysAddr, size: usize) {
-    let image_ptr = phys_to_virt(hpa).as_ptr();
-    let image = unsafe { core::slice::from_raw_parts(image_ptr, size) };
-    unsafe {
-        core::slice::from_raw_parts_mut(gpa_as_mut_ptr(load_gpa), size).copy_from_slice(image)
-    }
+fn load_guest_image_from_file_system(file_name: &str, load_gpa: GuestPhysAddr) -> AxResult {
+    use std::io::{BufReader, Read};
+    let file = std::fs::File::open(file_name)?;
+    let buffer = unsafe {
+        core::slice::from_raw_parts_mut(gpa_as_mut_ptr(load_gpa), file.metadata()?.size() as usize)
+    };
+    let mut file = BufReader::new(file);
+    file.read_exact(buffer)?;
+    Ok(())
 }
 
 fn setup_gpm() -> AxResult<GuestPhysMemorySet> {
-    // copy BIOS and guest images
-    load_guest_image(BIOS_PADDR, BIOS_ENTRY, BIOS_SIZE);
-    load_guest_image(GUEST_IMAGE_PADDR, GUEST_ENTRY, GUEST_IMAGE_SIZE);
+    // copy BIOS and guest images from file system
+    load_guest_image_from_file_system("rvm-bios.bin", BIOS_ENTRY)?;
+    load_guest_image_from_file_system("nimbos.bin", GUEST_ENTRY)?;
 
     // create nested page table and add mapping
     let mut gpm = GuestPhysMemorySet::new()?;

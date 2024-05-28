@@ -46,8 +46,6 @@ NET ?= n
 GRAPHIC ?= n
 BUS ?= mmio
 
-VMM ?= n
-
 DISK_IMG ?= disk.img
 QEMU_LOG ?= n
 NET_DUMP ?= n

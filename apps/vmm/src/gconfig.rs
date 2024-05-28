@@ -1,10 +1,4 @@
-use axvm::{GuestPhysAddr, HostPhysAddr};
-
-pub const BIOS_PADDR: HostPhysAddr = HostPhysAddr::from(0x400_0000);
-pub const BIOS_SIZE: usize = 0x1000;
-
-pub const GUEST_IMAGE_PADDR: HostPhysAddr = HostPhysAddr::from(0x400_1000);
-pub const GUEST_IMAGE_SIZE: usize = 0x10_0000; // 1M
+use axvm::GuestPhysAddr;
 
 pub const GUEST_PHYS_MEMORY_BASE: GuestPhysAddr = 0;
 pub const BIOS_ENTRY: GuestPhysAddr = 0x8000;

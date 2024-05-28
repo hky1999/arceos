@@ -11,6 +11,7 @@ log = "0.4"
 axstd = { path = "../../ulib/axstd", features = [
     "alloc",
     "paging",
+    "fs",
 ], optional = true }
 axvm = { path = "../../crates/axvm" }
 axerrno = { path = "../../crates/axerrno" }

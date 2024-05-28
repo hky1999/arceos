@@ -20,8 +20,15 @@ $ make
 
 ## Build & Run Hypervisor
 
+ArceOS has its own FATFS file system (with "fs" feature enabled) and block driver support, allowing the loading of image files through ArceOS's file system instead of using QEMU's `-device loader,addr=xxx` parameter to place the image file at a specified physical memory address (which is not a good way).
+
+Before running the following command, remember to create a `disk.img` FAT-formatted file system image and copy the compiled outputs from the above two steps into disk.img.
+
 ```console
-$ make A=apps/vmm VMM=y run [LOG=warn|info|debug|trace]
+# Path for bios image: apps/vmm_guest/bios/out/rvm-bios.bin
+# Path for nimbos image: apps/vmm_guest/nimbos/kernel/target/x86_64/release/nimbos.bin
+
+$ make A=apps/vmm BLK=y run [LOG=warn|info|debug|trace]
 ......
 Booting from ROM..
 Initialize IDT & GDT...
