@@ -2,6 +2,20 @@
 
 Let's build an x86 hypervisor upon ArceOS unikernel!
 
+## Documents
+
+* [RVM-Tutirial wiki](https://github.com/equation314/RVM-Tutorial/wiki) (in Chinese)
+
+## Features
+
+* Lightweight enough, only 1K+ LoC
+* Supported guest OS: [NimbOS](https://github.com/equation314/nimbos)
+* Guest/host memory isolation with nested paging
+* Device emulation:
+    + serial port I/O
+    + APIC timer
+* Currently, only supports single core single vCPU and single guest
+
 ## Build Guest OS
 
 ```console

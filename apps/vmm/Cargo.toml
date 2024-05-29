@@ -15,6 +15,7 @@ axstd = { path = "../../ulib/axstd", features = [
     "alloc",
     "paging",
     "fs",
+    "irq",
 ], optional = true }
 axvm = { path = "../../crates/axvm" }
 axerrno = { path = "../../crates/axerrno" }
