@@ -930,6 +930,10 @@ impl<B: BarAllocTrait> PciConfig<B> {
         prefetchable: bool,
         size: u64,
     ) -> Result<()> {
+        warn!(
+            "register bar ID {} size {:#x} type {}\n",
+            id, size, region_type
+        );
         self.validate_bar_id(id)?;
         self.validate_bar_size(region_type, size)?;
         let offset: usize = BAR_0 as usize + id * REG_SIZE;
@@ -958,11 +962,9 @@ impl<B: BarAllocTrait> PciConfig<B> {
         if prefetchable {
             self.config[offset] |= BAR_PREFETCH;
         }
-        debug!("this is register bar\n");
+
         // let mut allocator = PCI_BAR_ALLOCATOR.lock();
         // let addr = allocator.alloc(region_type, size)?;
-        // let actual_addr = B::alloc(region_type, size)?;
-
         // Hard code, delete it!!!
         let addr = match region_type {
             RegionType::Io => BAR_SPACE_UNMAPPED,
@@ -1049,10 +1051,10 @@ impl<B: BarAllocTrait> PciConfig<B> {
             // first unmmap origin bar region
             if self.bars[id].address != BAR_SPACE_UNMAPPED {
                 // Invalid the bar region
-                {
-                    let mut allocator = PCI_BAR_ALLOCATOR.lock();
-                    allocator.dealloc(self.bars[id].region_type, self.bars[id].address);
-                }
+                // {
+                //     let mut allocator = PCI_BAR_ALLOCATOR.lock();
+                //     allocator.dealloc(self.bars[id].region_type, self.bars[id].address);
+                // }
                 self.bars[id].address = BAR_SPACE_UNMAPPED;
             }
 
