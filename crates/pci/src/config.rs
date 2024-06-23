@@ -927,6 +927,10 @@ impl<B: BarAllocTrait> PciConfig<B> {
         prefetchable: bool,
         size: u64,
     ) -> Result<()> {
+        warn!(
+            "register bar ID {} size {:#x} type {}\n",
+            id, size, region_type
+        );
         self.validate_bar_id(id)?;
         self.validate_bar_size(region_type, size)?;
         let offset: usize = BAR_0 as usize + id * REG_SIZE;
@@ -955,9 +959,16 @@ impl<B: BarAllocTrait> PciConfig<B> {
         if prefetchable {
             self.config[offset] |= BAR_PREFETCH;
         }
-        debug!("this is register bar\n");
-        let mut allocator = PCI_BAR_ALLOCATOR.lock();
-        let addr = allocator.alloc(region_type, size)?;
+
+        // let mut allocator = PCI_BAR_ALLOCATOR.lock();
+        // let addr = allocator.alloc(region_type, size)?;
+        // Hard code, delete it!!!
+        let addr = match region_type {
+            RegionType::Io => BAR_SPACE_UNMAPPED,
+            RegionType::Mem32Bit => 0xfebd5000,
+            RegionType::Mem64Bit => 0xfe000000,
+        };
+        // let addr = BAR_SPACE_UNMAPPED;
         let actual_addr = B::alloc(region_type, size)?;
 
         self.bars[id].ops = ops;
@@ -975,8 +986,9 @@ impl<B: BarAllocTrait> PciConfig<B> {
                 self.config[offset + i] |= (addr >> (i * 8)) as u8;
             }
         }
-        debug!(
-            "after register content:: {:?} addr:{:#x} actual addr:{:#x}",
+        warn!(
+            "after register offset {:#x} content:: {:#x?} addr:{:#x} actual addr:{:#x}",
+            offset,
             &self.config[offset..(offset + 4)] as &[u8],
             addr,
             actual_addr
@@ -996,10 +1008,10 @@ impl<B: BarAllocTrait> PciConfig<B> {
                 continue;
             }
             // Invalid the bar region
-            {
-                let mut allocator = PCI_BAR_ALLOCATOR.lock();
-                allocator.dealloc(bar.region_type, bar.address)?;
-            }
+            // {
+            //     let mut allocator = PCI_BAR_ALLOCATOR.lock();
+            //     allocator.dealloc(bar.region_type, bar.address)?;
+            // }
             B::dealloc(bar.region_type, bar.actual_address, bar.size)?;
             bar.address = BAR_SPACE_UNMAPPED;
             bar.actual_address = BAR_SPACE_UNMAPPED;
@@ -1030,10 +1042,10 @@ impl<B: BarAllocTrait> PciConfig<B> {
             // first unmmap origin bar region
             if self.bars[id].address != BAR_SPACE_UNMAPPED {
                 // Invalid the bar region
-                {
-                    let mut allocator = PCI_BAR_ALLOCATOR.lock();
-                    allocator.dealloc(self.bars[id].region_type, self.bars[id].address);
-                }
+                // {
+                //     let mut allocator = PCI_BAR_ALLOCATOR.lock();
+                //     allocator.dealloc(self.bars[id].region_type, self.bars[id].address);
+                // }
                 self.bars[id].address = BAR_SPACE_UNMAPPED;
             }
 
@@ -1044,8 +1056,8 @@ impl<B: BarAllocTrait> PciConfig<B> {
             // map new region
             if new_addr != BAR_SPACE_UNMAPPED {
                 self.bars[id].address = new_addr;
-                let mut allocator = PCI_BAR_ALLOCATOR.lock();
-                allocator.alloc_addr(self.bars[id].region_type, self.bars[id].size, new_addr)?;
+                // let mut allocator = PCI_BAR_ALLOCATOR.lock();
+                // allocator.alloc_addr(self.bars[id].region_type, self.bars[id].size, new_addr)?;
                 // Write the front part of addr into self.config[offset + 4] to self.config[offset + 31]
                 let offset = BAR_0 as usize + id as usize * REG_SIZE;
                 for i in 0..4 {
