@@ -549,6 +549,7 @@ dependencies = [
  "axlog",
  "axruntime",
  "axtask",
+ "bit-set",
  "bit_field",
  "bitflags 2.4.1",
  "byteorder",

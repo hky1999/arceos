@@ -32,7 +32,7 @@ use core::sync::atomic::{fence, Ordering, AtomicBool};
 
 //use core::sync::atomic::{AtomicU16, };
 
-use super::{AddressSpace, RegionCache, RegionType};
+use crate::mm::{AddressSpace, RegionCache, RegionType};
 
 use log::{error, warn};
 
@@ -56,6 +56,7 @@ use crate::device::virtio::{
 
 
 //use address_space::{AddressSpace, GuestAddress, RegionCache, RegionType};
+// use crate::mm::{AddressSpace, RegionCache, RegionType};
 
 use pci::util::byte_code::ByteCode;
 

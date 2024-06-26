@@ -12,6 +12,8 @@ use lazy_static::lazy_static;
 use spin::{mutex, rwlock::RwLock, Mutex};
 use x86_64::registers::debug;
 
+use crate::mm::AddressSpace;
+
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::device::virtio::{
@@ -261,6 +263,8 @@ pub struct VirtioPciDevice<B: BarAllocTrait> {
     device: Arc<Mutex<dyn VirtioDevice>>,
     /// Device id
     dev_id: Arc<AtomicU16>,
+    /// Memory AddressSpace
+    sys_mem: Arc<AddressSpace>,
     /// Offset of VirtioPciCfgAccessCap in Pci config space.
     cfg_cap_offset: usize,
     /// The function for interrupt triggering
@@ -271,9 +275,9 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
     pub fn new(
         name: String,
         devfn: u8,
+        sys_mem: Arc<AddressSpace>,
         device: Arc<Mutex<dyn VirtioDevice>>,
         parent_bus: Weak<Mutex<PciBus<B>>>,
-        multi_func: bool,
     ) -> Self {
         let queue_num = device.lock().queue_num();
         VirtioPciDevice {
@@ -285,6 +289,7 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
             },
             device,
             dev_id: Arc::new(AtomicU16::new(0)),
+            sys_mem,
             cfg_cap_offset: 0,
             interrupt_cb: None,
         }
@@ -371,10 +376,15 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
             if !q_config.ready {
                 debug!("queue is not ready, please check your init process");
             } else {
-                q_config.set_addr_cache(self.interrupt_cb.clone().unwrap(), features, &broken);
+                q_config.set_addr_cache(
+                    &self.sys_mem,
+                    self.interrupt_cb.clone().unwrap(),
+                    features,
+                    &broken,
+                );
             }
             let queue = Queue::new(*q_config, queue_type).unwrap();
-            if q_config.ready && !queue.is_valid() {
+            if q_config.ready && !queue.is_valid(&self.sys_mem) {
                 error!("Failed to activate device: Invalid queue");
                 return false;
             }
@@ -846,15 +856,15 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
     }
 }
 
-impl<B: BarAllocTrait + 'static> AsAny for VirtioPciDevice<B> {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+// impl<B: BarAllocTrait + 'static> AsAny for VirtioPciDevice<B> {
+//     fn as_any(&self) -> &dyn Any {
+//         self
+//     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-}
+//     fn as_any_mut(&mut self) -> &mut dyn Any {
+//         self
+//     }
+// }
 
 impl<B: BarAllocTrait + 'static> PciDevOps<B> for VirtioPciDevice<B> {
     fn name(&self) -> String {
