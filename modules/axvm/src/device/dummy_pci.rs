@@ -45,15 +45,15 @@ impl<B: BarAllocTrait + 'static> DummyPciDevice<B> {
     }
 }
 
-impl<B: BarAllocTrait + 'static> AsAny for DummyPciDevice<B> {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+// impl<B: BarAllocTrait + 'static> AsAny for DummyPciDevice<B> {
+//     fn as_any(&self) -> &dyn Any {
+//         self
+//     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-}
+//     fn as_any_mut(&mut self) -> &mut dyn Any {
+//         self
+//     }
+// }
 
 impl<B: BarAllocTrait + 'static> PciDevOps<B> for DummyPciDevice<B> {
     fn name(&self) -> String {

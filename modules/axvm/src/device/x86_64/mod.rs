@@ -2,10 +2,12 @@ pub mod device_emu;
 
 extern crate alloc;
 use super::dummy_pci::DummyPciDevice;
+use super::virtio::device::block::BlkDevConfig;
 use super::virtio::{
-    DummyVirtioDevice, VirtioDevice, VirtioMsiIrqManager, VirtioPciDevice,
+    Block, DummyVirtioDevice, VirtioDevice, VirtioMsiIrqManager, VirtioPciDevice,
     GLOBAL_VIRTIO_PCI_CFG_REQ, VIRTIO_TYPE_BLOCK,
 };
+use crate::mm::AddressSpace;
 use crate::device::BarAllocImpl;
 use crate::{
     nmi::NmiMessage, nmi::CORE_NMI_LIST, HyperCraftHal, PerCpuDevices, PerVmDevices,
@@ -57,10 +59,10 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
     fn init_pci_host(&mut self) {
         if let Some(vm_id) = self.vm_id {
             let pci_host = PciHost::new(Some(Arc::new(super::virtio::VirtioMsiIrqManager {
-            vm_id: self.vm_id.expect("None vm for pci host"),
-        })));
-        self.pci_devices = Some(Arc::new(Mutex::new(pci_host)));
-        }else {
+                vm_id: self.vm_id.expect("None vm for pci host"),
+            })));
+            self.pci_devices = Some(Arc::new(Mutex::new(pci_host)));
+        } else {
             panic!("this is not vm devicelist. vm_id is None");
         }
     }
@@ -84,12 +86,12 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
         name: String,
         devfn: u8,
         device: Arc<Mutex<dyn VirtioDevice>>,
-        multi_func: bool,
+        sys_mem: Arc<AddressSpace>,
     ) -> HyperResult<()> {
         let mut pci_host = self.pci_devices.clone().unwrap();
         let pci_bus = pci_host.lock().root_bus.clone();
         let parent_bus = Arc::downgrade(&pci_bus);
-        let mut pcidev = VirtioPciDevice::<B>::new(name, devfn, device, parent_bus, multi_func);
+        let mut pcidev = VirtioPciDevice::<B>::new(name, devfn, sys_mem, device, parent_bus);
         pcidev.realize()
     }
 
@@ -686,12 +688,12 @@ fn get_access_size(instruction: Instruction) -> HyperResult<u8> {
     }
 }
 
-pub struct NimbosVmDevices<H: HyperCraftHal, B: BarAllocTrait> {
+pub struct GuestVMDevices<H: HyperCraftHal, B: BarAllocTrait> {
     devices: DeviceList<H, B>,
     marker: PhantomData<H>,
 }
 
-impl<H: HyperCraftHal, B: BarAllocTrait + 'static> NimbosVmDevices<H, B> {
+impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
     fn handle_external_interrupt(vcpu: &VCpu<H>) -> HyperResult {
         let int_info = vcpu.interrupt_exit_info()?;
         trace!("VM-exit: external interrupt: {:#x?}", int_info);
@@ -706,8 +708,8 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> NimbosVmDevices<H, B> {
     }
 }
 
-impl<H: HyperCraftHal, B: BarAllocTrait + 'static> PerVmDevices<H> for NimbosVmDevices<H, B> {
-    fn new(vm_id: u32) -> HyperResult<Self> {
+impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
+    fn new(vm_id: u32, sys_mem: Arc<AddressSpace>) -> HyperResult<Self> {
         let mut devices = DeviceList::new(None, Some(vm_id));
         // init pci device
         devices.init_pci_host();
@@ -715,13 +717,21 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> PerVmDevices<H> for NimbosVmD
         // This is just for test.
         // devices.add_pci_device(String::from("pcitest"), Arc::new(AtomicU16::new(0)), 0x18)?;
 
-        // Create a virtio dummy device
-        let virtio_device_dummy = DummyVirtioDevice::new(VIRTIO_TYPE_BLOCK, 1, 4);
+        // // Create a virtio dummy device
+        // let virtio_device_dummy = DummyVirtioDevice::new(VIRTIO_TYPE_BLOCK, 1, 4);
+        // devices.add_virtio_pci_device(
+        //     String::from("virtio_blk_dummy"),
+        //     0x18,
+        //     Arc::new(Mutex::new(virtio_device_dummy)),
+        //     sys_mem,
+        // )?;
+
+        let blk = Block::new(BlkDevConfig::default());
         devices.add_virtio_pci_device(
-            String::from("virtio_blk_dummy"),
+            String::from("virtio_blk"),
             0x18,
-            Arc::new(Mutex::new(virtio_device_dummy)),
-            false,
+            Arc::new(Mutex::new(blk)),
+            sys_mem,
         )?;
 
         Ok(Self {

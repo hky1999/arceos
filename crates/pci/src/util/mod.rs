@@ -10,6 +10,17 @@ pub trait AsAny {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
+impl<T: Any> AsAny for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+
 /// Macro: Calculate offset of specified field in a type.
 #[macro_export]
 macro_rules! __offset_of {
