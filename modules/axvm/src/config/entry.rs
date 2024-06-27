@@ -119,7 +119,7 @@ pub struct VMCfgEntry {
 
     memory_regions: Vec<GuestMemoryRegion>,
     physical_pages: BTreeMap<usize, GlobalPage>,
-    memory_set: Option<Arc<RwLock<GuestPhysMemorySet>>>,
+    // memory_set: Option<Arc<RwLock<GuestPhysMemorySet>>>,
 }
 
 impl VMCfgEntry {
@@ -147,7 +147,7 @@ impl VMCfgEntry {
             ),
             memory_regions: Vec::new(),
             physical_pages: BTreeMap::new(),
-            memory_set: None,
+            // memory_set: None,
         }
     }
 
@@ -208,7 +208,7 @@ impl VMCfgEntry {
         Ok(())
     }
 
-    pub fn generate_guest_phys_memory_set(&mut self) -> Result<Arc<RwLock<GuestPhysMemorySet>>> {
+    pub fn generate_guest_phys_memory_set(&self) -> Result<Arc<RwLock<GuestPhysMemorySet>>> {
         info!("Create VM [{}] nested page table", self.vm_id);
 
         // create nested page table and add mapping
@@ -217,7 +217,7 @@ impl VMCfgEntry {
             gpm.map_region(r.clone().into())?;
         }
         let result = Arc::new(RwLock::new(gpm));
-        self.memory_set = Some(result.clone());
+        // self.memory_set = Some(result.clone());
         Ok(result)
     }
 

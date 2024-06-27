@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use memory_addr::PAGE_SIZE_4K;
+use spin::rwlock::RwLock;
 
 use hypercraft::{VCpu, VmCpus};
 
@@ -56,7 +57,7 @@ pub fn config_boot_linux() {
         }
     }
 
-    let ept = super::config::root_gpm().nest_page_table();
+    // let ept = super::config::root_gpm().nest_page_table();
     let ept_root = super::config::root_gpm().nest_page_table_root();
 
     let vm_id = VM_CNT.load(Ordering::SeqCst);
@@ -78,11 +79,14 @@ pub fn config_boot_linux() {
     map_vcpu2pcpu(vm_id, hart_id as u32, hart_id as u32);
 
     let mut vm = VM::<
-        HyperCraftHalImpl,
+        // HyperCraftHalImpl,
         X64VcpuDevices<HyperCraftHalImpl, BarAllocImpl>,
         // X64VmDevices<HyperCraftHalImpl, BarAllocImpl>,
-        GuestPageTable,
-    >::new(vcpus, Arc::new(ept), vm_id);
+    >::new(
+        vcpus,
+        Arc::new(RwLock::new(super::config::root_gpm().clone())),
+        vm_id,
+    );
     // The bind_vcpu method should be decoupled with vm struct.
     vm.bind_vcpu(hart_id).expect("bind vcpu failed");
 
@@ -145,10 +149,10 @@ pub fn boot_vm(vm_id: usize) {
     map_vcpu2pcpu(vm_id, vcpu_id as u32, hart_id as u32);
 
     let mut vm = VM::<
-        HyperCraftHalImpl,
+        // HyperCraftHalImpl,
         X64VcpuDevices<HyperCraftHalImpl, BarAllocImpl>,
         // GuestVMDevices<HyperCraftHalImpl, BarAllocImpl>,
-        GuestPageTable,
+        // GuestPageTable,
     >::new(vcpus, gpm, vm_id);
     // The bind_vcpu method should be decoupled with vm struct.
     vm.bind_vcpu(vcpu_id).expect("bind vcpu failed");
@@ -159,7 +163,7 @@ pub fn boot_vm(vm_id: usize) {
 
 use bit_set::BitSet;
 use iced_x86::{Decoder, DecoderOptions, Formatter, Instruction, MasmFormatter, OpKind};
-use spin::RwLock;
+// use spin::RwLock;
 
 use hypercraft::{
     GuestPageTableTrait, GuestPageWalkInfo, GuestPhysAddr, GuestVirtAddr, HostPhysAddr,
@@ -171,32 +175,35 @@ use crate::mm::{AddressSpace, GuestPhysMemorySet};
 
 const VM_EXIT_INSTR_LEN_VMCALL: u8 = 3;
 /// VM define.
-pub struct VM<H: HyperCraftHal, PD: PerCpuDevices<H>, G: GuestPageTableTrait> {
-    vcpus: VmCpus<H, PD>,
+pub struct VM<PD: PerCpuDevices<HyperCraftHalImpl>> {
+    vcpus: VmCpus<HyperCraftHalImpl, PD>,
     vcpu_bond: BitSet,
-    device: GuestVMDevices<H, BarAllocImpl>,
+    device: GuestVMDevices<HyperCraftHalImpl, BarAllocImpl>,
     vm_id: u32,
     /// EPT
-    pub ept: Arc<G>,
+    pub ept: Arc<GuestPageTable>,
     pub sys_mem: Arc<AddressSpace>,
 }
 
-impl<H: HyperCraftHal, PD: PerCpuDevices<H>, G: GuestPageTableTrait> VM<H, PD, G> {
+impl<PD: PerCpuDevices<HyperCraftHalImpl>> VM<PD> {
     /// Create a new [`VM`].
-    pub fn new(vcpus: VmCpus<H, PD>, mem_set: Arc<RwLock<GuestPhysMemorySet>>, vm_id: u32) -> Self {
+    pub fn new(vcpus: VmCpus<HyperCraftHalImpl, PD>, mem_set: Arc<RwLock<GuestPhysMemorySet>>, vm_id: u32) -> Self {
         Self {
             vcpus,
             vcpu_bond: BitSet::new(),
-            device: GuestVMDevices::<HyperCraftHalImpl, BarAllocImpl>::new(vm_id, mem_set.clone())
-                .unwrap(),
+            device: GuestVMDevices::<HyperCraftHalImpl, BarAllocImpl>::new(
+                vm_id,
+                Arc::new(AddressSpace::new(mem_set.clone())),
+            )
+            .unwrap(),
             vm_id,
-            ept: Arc::new(mem_set.as_ref().read().nest_page_table().clone()),
+            ept: Arc::new(mem_set.clone().as_ref().read().nest_page_table().clone()),
             sys_mem: Arc::new(AddressSpace::new(mem_set)),
         }
     }
 
     /// Bind the specified [`VCpu`] to current physical processor.
-    pub fn bind_vcpu(&mut self, vcpu_id: usize) -> HyperResult<(&mut VCpu<H>, &mut PD)> {
+    pub fn bind_vcpu(&mut self, vcpu_id: usize) -> HyperResult<(&mut VCpu<HyperCraftHalImpl>, &mut PD)> {
         if self.vcpu_bond.contains(vcpu_id) {
             Err(HyperError::InvalidParam)
         } else {
@@ -365,14 +372,14 @@ impl<H: HyperCraftHal, PD: PerCpuDevices<H>, G: GuestPageTableTrait> VM<H, PD, G
     }
 
     /// Get vcpu and its devices by its id.
-    pub fn get_vcpu_and_device(&mut self, vcpu_id: usize) -> HyperResult<(&mut VCpu<H>, &mut PD)> {
+    pub fn get_vcpu_and_device(&mut self, vcpu_id: usize) -> HyperResult<(&mut VCpu<HyperCraftHalImpl>, &mut PD)> {
         self.vcpus.get_vcpu_and_device(vcpu_id)
     }
 
     /// decode guest instruction
     pub fn decode_instr(
-        ept: Arc<G>,
-        vcpu: &VCpu<H>,
+        ept: Arc<GuestPageTable>,
+        vcpu: &VCpu<HyperCraftHalImpl>,
         guest_rip: usize,
         length: u32,
     ) -> HyperResult<Instruction> {
@@ -391,10 +398,10 @@ impl<H: HyperCraftHal, PD: PerCpuDevices<H>, G: GuestPageTableTrait> VM<H, PD, G
 
     /// get gva content bytes
     pub fn get_gva_content_bytes(
-        ept: Arc<G>,
+        ept: Arc<GuestPageTable>,
         guest_rip: usize,
         length: u32,
-        vcpu: &VCpu<H>,
+        vcpu: &VCpu<HyperCraftHalImpl>,
     ) -> HyperResult<Vec<u8>> {
         // debug!(
         //     "get_gva_content_bytes: guest_rip: {:#x}, length: {:#x}",
@@ -418,24 +425,28 @@ impl<H: HyperCraftHal, PD: PerCpuDevices<H>, G: GuestPageTableTrait> VM<H, PD, G
         Ok(content)
     }
 
-    fn gpa2hva(ept: Arc<G>, gpa: GuestPhysAddr) -> HyperResult<HostVirtAddr> {
+    fn gpa2hva(ept: Arc<GuestPageTable>, gpa: GuestPhysAddr) -> HyperResult<HostVirtAddr> {
         let hpa = Self::gpa2hpa(ept, gpa)?;
-        let hva = H::phys_to_virt(hpa);
+        let hva = HyperCraftHalImpl::phys_to_virt(hpa);
         Ok(hva as HostVirtAddr)
     }
 
-    fn gpa2hpa(ept: Arc<G>, gpa: GuestPhysAddr) -> HyperResult<HostPhysAddr> {
+    fn gpa2hpa(ept: Arc<GuestPageTable>, gpa: GuestPhysAddr) -> HyperResult<HostPhysAddr> {
         ept.translate(gpa)
     }
 
-    fn gva2gpa(ept: Arc<G>, vcpu: &VCpu<H>, gva: GuestVirtAddr) -> HyperResult<GuestPhysAddr> {
+    fn gva2gpa(
+        ept: Arc<GuestPageTable>,
+        vcpu: &VCpu<HyperCraftHalImpl>,
+        gva: GuestVirtAddr,
+    ) -> HyperResult<GuestPhysAddr> {
         let guest_ptw_info = vcpu.get_ptw_info();
         Self::page_table_walk(ept, guest_ptw_info, gva)
     }
 
     // suppose it is 4-level page table
     fn page_table_walk(
-        ept: Arc<G>,
+        ept: Arc<GuestPageTable>,
         pw_info: GuestPageWalkInfo,
         gva: GuestVirtAddr,
     ) -> HyperResult<GuestPhysAddr> {

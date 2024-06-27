@@ -204,6 +204,8 @@ impl From<GuestMemoryRegion> for MapRegion {
     }
 }
  */
+
+#[derive(Clone)]
 pub struct GuestPhysMemorySet {
     regions: BTreeMap<GuestPhysAddr, GuestMemoryRegion>,
     npt: GuestPageTable,
@@ -243,9 +245,9 @@ impl GuestPhysMemorySet {
         let mut mapped_region = region;
         debug!(
             "GPM Mapping Region [{:#x}-{:#x}] {:?}",
-            region.start,
-            region.start + region.size,
-            region.flags
+            mapped_region.gpa,
+            mapped_region.gpa + mapped_region.size,
+            mapped_region.flags
         );
         // TODO: determine why this part exists and should we keep the next part
         while mapped_region.size != 0 {
@@ -256,7 +258,7 @@ impl GuestPhysMemorySet {
                 //     region.start + region.size,
                 //     self
                 // );
-                mapped_region.start += PAGE_SIZE_4K;
+                mapped_region.gpa += PAGE_SIZE_4K;
                 mapped_region.size -= PAGE_SIZE_4K;
                 // return Err(Error::InvalidParam);
             } else {
@@ -273,17 +275,17 @@ impl GuestPhysMemorySet {
             return Ok(());
         }
         // TODO: determine why the previous part exists and should we keep this part
-        if !self.test_free_area(&region) {
+        if !self.test_free_area(&mapped_region) {
             warn!(
                 "MapRegion({:#x}..{:#x}) overlapped in:\n{:#x?}",
-                region.gpa,
-                region.gpa + region.size,
+                mapped_region.gpa,
+                mapped_region.gpa + mapped_region.size,
                 self
             );
             return Err(Error::InvalidParam);
         }
-        region.map_to(&mut self.npt)?;
-        self.regions.insert(region.gpa, region);
+        mapped_region.map_to(&mut self.npt)?;
+        self.regions.insert(mapped_region.gpa, mapped_region);
         Ok(())
     }
 
@@ -316,7 +318,10 @@ impl GuestPhysMemorySet {
         }
     }
 
-    pub fn translate_and_get_limit(&self, gpa: GuestPhysAddr) -> HyperResult<(HostPhysAddr, usize)> {
+    pub fn translate_and_get_limit(
+        &self,
+        gpa: GuestPhysAddr,
+    ) -> HyperResult<(HostPhysAddr, usize)> {
         let region = self.lookup_region(gpa)?;
         let hpa = region.target(gpa);
         let limit = region.gpa + region.size - gpa;

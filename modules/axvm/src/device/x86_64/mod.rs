@@ -848,7 +848,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
 }
 
 impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
-    fn new(vm_id: u32, sys_mem: Arc<AddressSpace>) -> HyperResult<Self> {
+    pub fn new(vm_id: u32, sys_mem: Arc<AddressSpace>) -> HyperResult<Self> {
         let mut devices = DeviceList::new(None, Some(vm_id));
         // init pci device
         devices.init_pci_host();
@@ -879,7 +879,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
         })
     }
 
-    fn vmexit_handler(
+    pub fn vmexit_handler(
         &mut self,
         vcpu: &mut VCpu<H>,
         exit_info: &VmExitInfo,
