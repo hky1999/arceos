@@ -29,17 +29,20 @@ mod arch;
 mod hvc;
 mod irq;
 mod nmi;
-mod page_table;
+// mod page_table;
 
 // pub use nmi::cpu_nmi_list_init;
 
 mod vm;
 pub use vm::*;
 
+mod vcpu;
+mod vcpu_list;
+
 pub use arch::{PerCpu, VCpu};
 
 pub use axhal::mem::{phys_to_virt, virt_to_phys, PhysAddr};
-pub use page_table::GuestPageTable;
+pub use mm::GuestPageTable;
 
 pub use hypercraft::GuestPageTableTrait;
 pub use hypercraft::HyperCraftHal;

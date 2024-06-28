@@ -7,8 +7,8 @@ use super::virtio::{
     Block, DummyVirtioDevice, VirtioDevice, VirtioMsiIrqManager, VirtioPciDevice,
     GLOBAL_VIRTIO_PCI_CFG_REQ, VIRTIO_TYPE_BLOCK,
 };
-use crate::mm::AddressSpace;
 use crate::device::BarAllocImpl;
+use crate::mm::AddressSpace;
 use crate::{
     nmi::NmiMessage, nmi::CORE_NMI_LIST, HyperCraftHal, PerCpuDevices, PerVmDevices,
     Result as HyperResult, VCpu, VmExitInfo, VmxExitReason,
@@ -851,8 +851,8 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
     pub fn new(vm_id: u32, sys_mem: Arc<AddressSpace>) -> HyperResult<Self> {
         let mut devices = DeviceList::new(None, Some(vm_id));
         // init pci device
-        devices.init_pci_host();
-        devices.add_port_io_device(devices.pci_devices.clone().unwrap());
+        // devices.init_pci_host();
+        // devices.add_port_io_device(devices.pci_devices.clone().unwrap());
         // This is just for test.
         // devices.add_pci_device(String::from("pcitest"), Arc::new(AtomicU16::new(0)), 0x18)?;
 
@@ -865,13 +865,13 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
         //     sys_mem,
         // )?;
 
-        let blk = Block::new(BlkDevConfig::default());
-        devices.add_virtio_pci_device(
-            String::from("virtio_blk"),
-            0x18,
-            Arc::new(Mutex::new(blk)),
-            sys_mem,
-        )?;
+        // let blk = Block::new(BlkDevConfig::default());
+        // devices.add_virtio_pci_device(
+        //     String::from("virtio_blk"),
+        //     0x18,
+        //     Arc::new(Mutex::new(blk)),
+        //     sys_mem,
+        // )?;
 
         Ok(Self {
             marker: PhantomData,

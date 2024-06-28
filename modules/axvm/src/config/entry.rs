@@ -56,7 +56,7 @@ impl VmConfigTable {
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum VmType {
     #[default]
-    VmTUnknown = 0,
+    VMTHostVM = 0,
     VmTNimbOS = 1,
     VmTLinux = 2,
 }
@@ -64,7 +64,7 @@ pub enum VmType {
 impl From<usize> for VmType {
     fn from(value: usize) -> Self {
         match value {
-            0 => Self::VmTUnknown,
+            0 => Self::VMTHostVM,
             1 => Self::VmTNimbOS,
             2 => Self::VmTLinux,
             _ => panic!("Unknown VmType value: {}", value),
@@ -103,15 +103,15 @@ impl VMImgCfg {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct VMCfgEntry {
     vm_id: usize,
     name: String,
     vm_type: VmType,
 
     cmdline: String,
-    /// The cpu_set here refers to the `core_id` from Linux's perspective. \
-    /// Therefore, when looking for the corresponding `cpu_id`, 
+    /// The cpu_set here refers to the `core_id` from Linux's perspective.
+    /// Therefore, when looking for the corresponding `cpu_id`,
     /// we need to perform a conversion using `core_id_to_cpu_id`.
     cpu_set: usize,
 
@@ -153,6 +153,30 @@ impl VMCfgEntry {
 
     pub fn get_cpu_set(&self) -> usize {
         self.cpu_set
+    }
+
+    pub fn cpu_num(&self) -> usize {
+        let mut cpu_num = 0;
+        while self.cpu_set != 0 {
+            if self.cpu_set & 1 != 0 {
+                cpu_num += 1;
+            }
+            self.cpu_set >>= 1;
+        }
+        cpu_num
+    }
+
+    pub fn get_physical_id_list(&self) -> Vec<usize> {
+        let mut phys_id_list = vec![];
+        let mut phys_id = 0;
+        while self.cpu_set != 0 {
+            if self.cpu_set & 1 != 0 {
+                phys_id_list.push(phys_id);
+            }
+            phys_id += 1;
+            self.cpu_set >>= 1;
+        }
+        phys_id_list
     }
 
     pub fn get_vm_type(&self) -> VmType {
@@ -208,17 +232,21 @@ impl VMCfgEntry {
         Ok(())
     }
 
-    pub fn generate_guest_phys_memory_set(&self) -> Result<Arc<RwLock<GuestPhysMemorySet>>> {
+    pub fn generate_guest_phys_memory_set(&self) -> Result<GuestPhysMemorySet> {
         info!("Create VM [{}] nested page table", self.vm_id);
+        if self.vm_type == VmType::VMTHostVM {
+            return Ok(super::gpm_def::root_gpm().clone());
+        }
 
         // create nested page table and add mapping
         let mut gpm = GuestPhysMemorySet::new()?;
         for r in &self.memory_regions {
             gpm.map_region(r.clone().into())?;
         }
-        let result = Arc::new(RwLock::new(gpm));
+        // let result = Arc::new(RwLock::new(gpm));
         // self.memory_set = Some(result.clone());
-        Ok(result)
+        // Ok(result)
+        Ok(gpm)
     }
 
     fn gpa_to_hpa_inside_ram_memory_region(&self, addr: GuestPhysAddr) -> Option<HostPhysAddr> {

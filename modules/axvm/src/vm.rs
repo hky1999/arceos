@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ops::Deref;
@@ -5,17 +6,20 @@ use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use memory_addr::PAGE_SIZE_4K;
 use spin::rwlock::RwLock;
 
-use hypercraft::{VCpu, VmCpus};
+use crate::vcpu::Vcpu;
+use crate::vcpu_list::VmCpus;
+use hypercraft::VCpu;
+use hypercraft::VmxInterruptionType;
 
 use super::arch::new_vcpu;
 #[cfg(target_arch = "x86_64")]
 use super::device::{self, GuestVMDevices, X64VcpuDevices, X64VmDevices};
 use crate::GuestPageTable;
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use axhal::{current_cpu_id, hv::HyperCraftHalImpl};
 
-use crate::config::entry::vm_cfg_entry;
-use crate::device::BarAllocImpl;
+use crate::config::entry::{vm_cfg_entry, VMCfgEntry, VmType};
+use crate::device::{BarAllocImpl, DeviceList};
 
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
@@ -26,6 +30,20 @@ lazy_static! {
 }
 
 static VM_CNT: AtomicU32 = AtomicU32::new(0);
+
+struct VMList {
+    vm_list: BTreeMap<usize, Arc<VM>>,
+}
+
+impl VMList {
+    const fn new() -> VMList {
+        VMList {
+            vm_list: BTreeMap::new(),
+        }
+    }
+}
+
+static GLOBAL_VM_LIST: Mutex<VMList> = Mutex::new(VMList::new());
 
 // use super::type1_5::cell;
 static INIT_GPM_OK: AtomicU32 = AtomicU32::new(0);
@@ -43,6 +61,7 @@ pub fn map_vcpu2pcpu(vm_id: u32, vcpu_id: u32, pcup_id: u32) {
 
 pub fn config_boot_linux() {
     let hart_id = current_cpu_id();
+    let vm_id = 0 as usize;
     let linux_context = axhal::hv::get_linux_context();
 
     crate::arch::cpu_hv_hardware_enable(hart_id, linux_context)
@@ -50,6 +69,12 @@ pub fn config_boot_linux() {
 
     if hart_id == 0 {
         super::config::init_root_gpm().expect("init_root_gpm failed");
+        let mvm_config = VMCfgEntry::default();
+        let mut mvm = VM::new(vm_id, mvm_config);
+        GLOBAL_VM_LIST.lock().vm_list.insert(vm_id, mvm);
+
+        info!("CPU{} vm new success", hart_id);
+
         INIT_GPM_OK.store(1, Ordering::Release);
     } else {
         while INIT_GPM_OK.load(Ordering::Acquire) < 1 {
@@ -57,46 +82,25 @@ pub fn config_boot_linux() {
         }
     }
 
-    // let ept = super::config::root_gpm().nest_page_table();
-    let ept_root = super::config::root_gpm().nest_page_table_root();
+    let mut vm_list_lock = GLOBAL_VM_LIST.lock();
+    let mut mvm = vm_list_lock.vm_list.get(&vm_id).unwrap();
 
-    let vm_id = VM_CNT.load(Ordering::SeqCst);
-    VM_CNT.fetch_add(1, Ordering::SeqCst);
-
-    debug!("create vcpu {} for vm {}", hart_id, vm_id);
-    let vcpu = new_vcpu(
-        hart_id,
-        crate::arch::cpu_vmcs_revision_id(),
-        ept_root,
-        &linux_context,
-    )
-    .unwrap();
-    let mut vcpus =
-        VmCpus::<HyperCraftHalImpl, X64VcpuDevices<HyperCraftHalImpl, BarAllocImpl>>::new();
     info!("CPU{} add vcpu to vm...", hart_id);
-    vcpus.add_vcpu(vcpu).expect("add vcpu failed");
 
-    map_vcpu2pcpu(vm_id, hart_id as u32, hart_id as u32);
+    // map_vcpu2pcpu(vm_id, hart_id as u32, hart_id as u32);
 
-    let mut vm = VM::<
-        // HyperCraftHalImpl,
-        X64VcpuDevices<HyperCraftHalImpl, BarAllocImpl>,
-        // X64VmDevices<HyperCraftHalImpl, BarAllocImpl>,
-    >::new(
-        vcpus,
-        Arc::new(RwLock::new(super::config::root_gpm().clone())),
-        vm_id,
-    );
-    // The bind_vcpu method should be decoupled with vm struct.
-    vm.bind_vcpu(hart_id).expect("bind vcpu failed");
+    // let vcpu = mvm.get_vcpu(hart_id).expect("bind vcpu failed");
 
+    // vcpu.bind_to_current_processor();
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     while INITED_CPUS.load(Ordering::Acquire) < axconfig::SMP {
         core::hint::spin_loop();
     }
 
+    let vcpu = mvm.vcpu(hart_id).expect("VCPU {} not exist");
+
     debug!("CPU{} before run vcpu", hart_id);
-    info!("{:?}", vm.run_type15_vcpu(hart_id, &linux_context));
+    info!("{:?}", mvm.run_type15_vcpu(hart_id, &linux_context));
 
     // disable hardware virtualization todo
 }
@@ -119,46 +123,46 @@ pub fn boot_vm(vm_id: usize) {
         vm_cfg_entry.get_vm_entry(),
     );
 
-    let gpm = vm_cfg_entry
-        .generate_guest_phys_memory_set()
-        .expect("Failed to generate GPM");
+    // let gpm = vm_cfg_entry
+    //     .generate_guest_phys_memory_set()
+    //     .expect("Failed to generate GPM");
 
-    // let gpm = gpm.read().deref();
-    // let npt = gpm.nest_page_table();
-    // let npt_root = gpm.nest_page_table_root();
+    // // let gpm = gpm.read().deref();
+    // // let npt = gpm.nest_page_table();
+    // // let npt_root = gpm.nest_page_table_root();
 
-    let npt_root = gpm.read().nest_page_table_root();
-    info!("{:#x?}", gpm);
+    // let npt_root = gpm.read().nest_page_table_root();
+    // info!("{:#x?}", gpm);
 
-    let vm_id = VM_CNT.load(Ordering::SeqCst);
-    VM_CNT.fetch_add(1, Ordering::SeqCst);
-    let vcpu_id = 0;
-    debug!("create vcpu {} for vm {}", vcpu_id, vm_id);
-    // Main scheduling item, managed by `axtask`
-    let vcpu = VCpu::new(
-        vcpu_id,
-        crate::arch::cpu_vmcs_revision_id(),
-        vm_cfg_entry.get_vm_entry(),
-        npt_root,
-    )
-    .unwrap();
-    let mut vcpus =
-        VmCpus::<HyperCraftHalImpl, X64VcpuDevices<HyperCraftHalImpl, BarAllocImpl>>::new();
-    vcpus.add_vcpu(vcpu).expect("add vcpu failed");
+    // let vm_id = VM_CNT.load(Ordering::SeqCst);
+    // VM_CNT.fetch_add(1, Ordering::SeqCst);
+    // let vcpu_id = 0;
+    // debug!("create vcpu {} for vm {}", vcpu_id, vm_id);
+    // // Main scheduling item, managed by `axtask`
+    // let vcpu = VCpu::new(
+    //     vcpu_id,
+    //     crate::arch::cpu_vmcs_revision_id(),
+    //     vm_cfg_entry.get_vm_entry(),
+    //     npt_root,
+    // )
+    // .unwrap();
+    // let mut vcpus =
+    //     VmCpus::<HyperCraftHalImpl, X64VcpuDevices<HyperCraftHalImpl, BarAllocImpl>>::new();
+    // vcpus.add_vcpu(vcpu).expect("add vcpu failed");
 
-    map_vcpu2pcpu(vm_id, vcpu_id as u32, hart_id as u32);
+    // map_vcpu2pcpu(vm_id, vcpu_id as u32, hart_id as u32);
 
-    let mut vm = VM::<
-        // HyperCraftHalImpl,
-        X64VcpuDevices<HyperCraftHalImpl, BarAllocImpl>,
-        // GuestVMDevices<HyperCraftHalImpl, BarAllocImpl>,
-        // GuestPageTable,
-    >::new(vcpus, gpm, vm_id);
-    // The bind_vcpu method should be decoupled with vm struct.
-    vm.bind_vcpu(vcpu_id).expect("bind vcpu failed");
+    // let mut vm = VM::<
+    //     // HyperCraftHalImpl,
+    //     X64VcpuDevices<HyperCraftHalImpl, BarAllocImpl>,
+    //     // GuestVMDevices<HyperCraftHalImpl, BarAllocImpl>,
+    //     // GuestPageTable,
+    // >::new(vcpus, gpm, vm_id);
+    // // The bind_vcpu method should be decoupled with vm struct.
+    // vm.bind_vcpu(vcpu_id).expect("bind vcpu failed");
 
-    info!("Running guest...");
-    info!("{:?}", vm.run_vcpu(0));
+    // info!("Running guest...");
+    // info!("{:?}", vm.run_vcpu(0));
 }
 
 use bit_set::BitSet;
@@ -174,216 +178,282 @@ use hypercraft::{
 use crate::mm::{AddressSpace, GuestPhysMemorySet};
 
 const VM_EXIT_INSTR_LEN_VMCALL: u8 = 3;
+
 /// VM define.
-pub struct VM<PD: PerCpuDevices<HyperCraftHalImpl>> {
-    vcpus: VmCpus<HyperCraftHalImpl, PD>,
-    vcpu_bond: BitSet,
-    device: GuestVMDevices<HyperCraftHalImpl, BarAllocImpl>,
-    vm_id: u32,
-    /// EPT
-    pub ept: Arc<GuestPageTable>,
-    pub sys_mem: Arc<AddressSpace>,
+pub struct VM {
+    // vcpus: VmCpus<PD>,
+    // vcpu_bond: BitSet,
+    // device: GuestVMDevices<HyperCraftHalImpl, BarAllocImpl>,
+    // vm_id: u32,
+    // /// EPT
+    // pub ept: Arc<GuestPageTable>,
+    // pub sys_mem: Arc<AddressSpace>,
+    inner_const: VmInnerConst,
+    inner_mut: Mutex<VmInnerMut>,
 }
 
-impl<PD: PerCpuDevices<HyperCraftHalImpl>> VM<PD> {
-    /// Create a new [`VM`].
-    pub fn new(vcpus: VmCpus<HyperCraftHalImpl, PD>, mem_set: Arc<RwLock<GuestPhysMemorySet>>, vm_id: u32) -> Self {
-        Self {
-            vcpus,
-            vcpu_bond: BitSet::new(),
-            device: GuestVMDevices::<HyperCraftHalImpl, BarAllocImpl>::new(
-                vm_id,
-                Arc::new(AddressSpace::new(mem_set.clone())),
-            )
-            .unwrap(),
+struct VmInnerConst {
+    vm_id: usize,
+    config: VMCfgEntry,
+    vcpu_list: Box<[Vcpu]>,
+    // emu_devs: Vec<Arc<dyn EmuDev<HyperCraftHalImpl>>>,
+    devices: DeviceList<HyperCraftHalImpl, BarAllocImpl>,
+}
+
+impl VmInnerConst {
+    fn new(vm_id: usize, config: VMCfgEntry, vm: Weak<VM>) -> Self {
+        let phys_id_list = config.get_physical_id_list();
+        debug!("VM[{}] vcpu phys_id_list {:?}", id, phys_id_list);
+
+        let mut vcpu_list = Vec::with_capacity(config.cpu_num());
+        for (vcpu_id, phys_id) in phys_id_list.into_iter().enumerate() {
+            vcpu_list.push(Vcpu::new(vm.clone(), vcpu_id, phys_id, &config));
+        }
+        let mut this = Self {
             vm_id,
-            ept: Arc::new(mem_set.clone().as_ref().read().nest_page_table().clone()),
-            sys_mem: Arc::new(AddressSpace::new(mem_set)),
-        }
+            config,
+            vcpu_list: vcpu_list.into_boxed_slice(),
+            // emu_devs: vec![],
+            devices: DeviceList::new(Some(0), Some(vm_id as u32)),
+        };
+        this.init_devices(vm);
+        this
     }
 
-    /// Bind the specified [`VCpu`] to current physical processor.
-    pub fn bind_vcpu(&mut self, vcpu_id: usize) -> HyperResult<(&mut VCpu<HyperCraftHalImpl>, &mut PD)> {
-        if self.vcpu_bond.contains(vcpu_id) {
-            Err(HyperError::InvalidParam)
-        } else {
-            match self.vcpus.get_vcpu_and_device(vcpu_id) {
-                Ok((vcpu, device)) => {
-                    self.vcpu_bond.insert(vcpu_id);
-                    vcpu.bind_to_current_processor()?;
-                    Ok((vcpu, device))
-                }
-                e @ Err(_) => e,
-            }
-        }
+    fn init_devices(&mut self, vm: Weak<VM>) -> bool {
+        true
     }
+}
 
-    #[allow(unreachable_code)]
-    /// Run a specified [`VCpu`] on current logical vcpu.
-    pub fn run_vcpu(&mut self, vcpu_id: usize) -> HyperResult {
-        let (vcpu, vcpu_device) = self.vcpus.get_vcpu_and_device(vcpu_id).unwrap();
+struct VmInnerMut {
+    pub mem_set: GuestPhysMemorySet,
+}
 
-        loop {
-            if let Some(exit_info) = vcpu.run() {
-                // we need to handle vm-exit this by ourselves
+impl VmInnerMut {
+    fn new(mem_set: GuestPhysMemorySet) -> Self {
+        Self { mem_set }
+    }
+}
 
-                if exit_info.exit_reason == VmxExitReason::VMCALL {
-                    let regs = vcpu.regs();
-                    trace!("{:#x?}", regs);
-                    let id = regs.rax as u32;
-                    let args = (regs.rdi as usize, regs.rsi as usize, regs.rdx as usize);
+impl VM {
+    /// Create a new [`VM`].
+    pub fn new(vm_id: usize, config: VMCfgEntry) -> Arc<Self> {
+        debug!("Constuct VM {vm_id}");
+        let mem_set = config.generate_guest_phys_memory_set().unwrap();
 
-                    match vcpu_device.hypercall_handler(vcpu, id, args) {
-                        Ok(result) => vcpu.regs_mut().rax = result as u64,
-                        Err(e) => panic!("Hypercall failed: {e:?}, hypercall id: {id:#x}, args: {args:#x?}, vcpu: {vcpu:#x?}"),
-                    }
-
-                    vcpu.advance_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
-                } else if exit_info.exit_reason == VmxExitReason::EXCEPTION_NMI {
-                    match vcpu_device.nmi_handler(vcpu) {
-                        Ok(result) => vcpu.regs_mut().rax = result as u64,
-                        Err(e) => panic!("nmi_handler failed: {e:?}"),
-                    }
-                } else {
-                    let result = vcpu_device.vmexit_handler(vcpu, &exit_info).or_else(|| {
-                        let guest_rip = exit_info.guest_rip;
-                        let length = exit_info.exit_instruction_length;
-                        let instr = Self::decode_instr(self.ept.clone(), vcpu, guest_rip, length)
-                            .expect("decode instruction failed");
-                        self.device.vmexit_handler(vcpu, &exit_info, Some(instr))
-                    });
-
-                    match result {
-                        Some(result) => {
-                            if result.is_err() {
-                                panic!(
-                                    "VM failed to handle a vm-exit: {:?}, error {:?}, vcpu: {:#x?}",
-                                    exit_info.exit_reason,
-                                    result.unwrap_err(),
-                                    vcpu
-                                );
-                            }
-                        }
-                        None => {
-                            if exit_info.exit_reason == VmxExitReason::IO_INSTRUCTION {
-                                let io_info = vcpu.io_exit_info().unwrap();
-                                panic!(
-                                    "nobody wants to handle this vm-exit: {:#x?}, io-info: {:?}",
-                                    exit_info, io_info
-                                );
-                            } else {
-                                panic!(
-                                    "nobody wants to handle this vm-exit: {:#x?}, vcpu: {:#x?}",
-                                    exit_info, vcpu
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            vcpu_device.check_events(vcpu)?;
+        let this = Arc::new_cyclic(|weak| VM {
+            inner_const: VmInnerConst::new(vm_id, config, weak.clone()),
+            inner_mut: Mutex::new(VmInnerMut::new(mem_set)),
+        });
+        for vcpu in this.vcpu_list() {
+            vcpu.init(this);
         }
 
-        Ok(())
+        this
     }
 
-    #[cfg(feature = "type1_5")]
-    #[allow(unreachable_code)]
-    /// Run a specified [`VCpu`] on current logical vcpu.
-    pub fn run_type15_vcpu(&mut self, vcpu_id: usize, linux: &LinuxContext) -> HyperResult {
-        let (vcpu, vcpu_device) = self.vcpus.get_vcpu_and_device(vcpu_id).unwrap();
-        loop {
-            if let Some(exit_info) = vcpu.run_type15(linux) {
-                if exit_info.exit_reason == VmxExitReason::VMCALL {
-                    let regs = vcpu.regs();
-                    let id = regs.rax as u32;
-                    let args = (regs.rdi as usize, regs.rsi as usize, regs.rdx as usize);
-
-                    trace!("{:#x?}", regs);
-                    match vcpu_device.hypercall_handler(vcpu, id, args) {
-                        Ok(result) => vcpu.regs_mut().rax = result as u64,
-                        Err(e) => panic!("Hypercall failed: {e:?}, hypercall id: {id:#x}, args: {args:#x?}, vcpu: {vcpu:#x?}"),
-                    }
-
-                    vcpu.advance_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
-                } else if exit_info.exit_reason == VmxExitReason::EXCEPTION_NMI {
-                    match vcpu_device.nmi_handler(vcpu) {
-                        Ok(result) => vcpu.regs_mut().rax = result as u64,
-                        Err(e) => panic!("nmi_handler failed: {e:?}"),
-                    }
-                } else {
-                    let result = vcpu_device.vmexit_handler(vcpu, &exit_info).or_else(|| {
-                        let guest_rip = exit_info.guest_rip;
-                        let length = exit_info.exit_instruction_length;
-                        let instr = Self::decode_instr(self.ept.clone(), vcpu, guest_rip, length)
-                            .expect("decode instruction failed");
-                        self.device.vmexit_handler(vcpu, &exit_info, Some(instr))
-                    });
-                    debug!("this is result {:?}", result);
-                    match result {
-                        Some(result) => {
-                            if result.is_err() {
-                                panic!(
-                                    "VM failed to handle a vm-exit: {:#x?}, error {:?}, vcpu: {:#x?}",
-                                    exit_info.exit_reason,
-                                    result.unwrap_err(),
-                                    vcpu
-                                );
-                            }
-                        }
-                        None => {
-                            panic!(
-                                "nobody wants to handle this vm-exit: {:#x?}, vcpu: {:#x?}",
-                                exit_info, vcpu
-                            );
-                        }
-                    }
-                }
-                // debug!("test decode instruction");
-                // let guest_rip = exit_info.guest_rip;
-                // let length = exit_info.exit_instruction_length;
-                // let instr = Self::decode_instr(self.ept.clone(), vcpu, guest_rip, length)?;
-                // debug!("this is instr {:?}", instr);
-            }
-            // vcpu_device.check_events(vcpu)?;
-        }
+    #[inline]
+    pub fn vcpu(&self, vcpu_id: usize) -> Option<&Vcpu> {
+        self.vcpu_list().get(vcpu_id)
     }
 
-    /// Unbind the specified [`VCpu`] bond by [`VM::<H>::bind_vcpu`].
-    pub fn unbind_vcpu(&mut self, vcpu_id: usize) -> HyperResult {
-        if self.vcpu_bond.contains(vcpu_id) {
-            match self.vcpus.get_vcpu_and_device(vcpu_id) {
-                Ok((vcpu, _)) => {
-                    self.vcpu_bond.remove(vcpu_id);
-                    vcpu.unbind_from_current_processor()?;
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            }
-        } else {
-            Err(HyperError::InvalidParam)
-        }
+    #[inline]
+    pub fn vcpu_list(&self) -> &[Vcpu] {
+        &self.inner_const.vcpu_list
     }
 
-    /// Get per-vm devices.
-    pub fn devices(&mut self) -> &mut GuestVMDevices<HyperCraftHalImpl, BarAllocImpl> {
-        &mut self.device
+    #[inline]
+    pub fn config(&self) -> &VMCfgEntry {
+        &self.inner_const.config
     }
 
-    /// Get vcpu and its devices by its id.
-    pub fn get_vcpu_and_device(&mut self, vcpu_id: usize) -> HyperResult<(&mut VCpu<HyperCraftHalImpl>, &mut PD)> {
-        self.vcpus.get_vcpu_and_device(vcpu_id)
+    #[inline]
+    pub fn vm_type(&self) -> VmType {
+        self.config().get_vm_type()
     }
+
+    pub fn devices(&self) -> &DeviceList<HyperCraftHalImpl, BarAllocImpl> {
+        &self.inner_const.devices
+    }
+
+    pub fn nest_page_table_root(&self) -> HostPhysAddr {
+        self.inner_mut.lock().mem_set.nest_page_table_root()
+    }
+
+    // /// Bind the specified [`VCpu`] to current physical processor.
+    // pub fn bind_vcpu(&mut self, vcpu_id: usize) -> HyperResult<&mut VCpu<HyperCraftHalImpl>> {
+    //     match self.inner_const.vcpus.get_vcpu(vcpu_id) {
+    //         Ok(vcpu) => {
+    //             vcpu.bind_to_current_processor()?;
+    //             Ok(vcpu)
+    //         }
+    //         e @ Err(_) => e,
+    //     }
+    // }
+
+    // #[allow(unreachable_code)]
+    // /// Run a specified [`VCpu`] on current logical vcpu.
+    // pub fn run_vcpu(&mut self, vcpu_id: usize) -> HyperResult {
+    //     let (vcpu, vcpu_device) = self.vcpus.get_vcpu_and_device(vcpu_id).unwrap();
+
+    //     loop {
+    //         if let Some(exit_info) = vcpu.run() {
+    //             // we need to handle vm-exit this by ourselves
+
+    //             if exit_info.exit_reason == VmxExitReason::VMCALL {
+    //                 let regs = vcpu.regs();
+    //                 trace!("{:#x?}", regs);
+    //                 let id = regs.rax as u32;
+    //                 let args = (regs.rdi as usize, regs.rsi as usize, regs.rdx as usize);
+
+    //                 match vcpu_device.hypercall_handler(vcpu, id, args) {
+    //                     Ok(result) => vcpu.regs_mut().rax = result as u64,
+    //                     Err(e) => panic!("Hypercall failed: {e:?}, hypercall id: {id:#x}, args: {args:#x?}, vcpu: {vcpu:#x?}"),
+    //                 }
+
+    //                 vcpu.advance_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
+    //             } else if exit_info.exit_reason == VmxExitReason::EXCEPTION_NMI {
+    //                 match vcpu_device.nmi_handler(vcpu) {
+    //                     Ok(result) => vcpu.regs_mut().rax = result as u64,
+    //                     Err(e) => panic!("nmi_handler failed: {e:?}"),
+    //                 }
+    //             } else {
+    //                 let result = vcpu_device.vmexit_handler(vcpu, &exit_info).or_else(|| {
+    //                     let guest_rip = exit_info.guest_rip;
+    //                     let length = exit_info.exit_instruction_length;
+    //                     let instr = Self::decode_instr(self.ept.clone(), vcpu, guest_rip, length)
+    //                         .expect("decode instruction failed");
+    //                     self.device.vmexit_handler(vcpu, &exit_info, Some(instr))
+    //                 });
+
+    //                 match result {
+    //                     Some(result) => {
+    //                         if result.is_err() {
+    //                             panic!(
+    //                                 "VM failed to handle a vm-exit: {:?}, error {:?}, vcpu: {:#x?}",
+    //                                 exit_info.exit_reason,
+    //                                 result.unwrap_err(),
+    //                                 vcpu
+    //                             );
+    //                         }
+    //                     }
+    //                     None => {
+    //                         if exit_info.exit_reason == VmxExitReason::IO_INSTRUCTION {
+    //                             let io_info = vcpu.io_exit_info().unwrap();
+    //                             panic!(
+    //                                 "nobody wants to handle this vm-exit: {:#x?}, io-info: {:?}",
+    //                                 exit_info, io_info
+    //                             );
+    //                         } else {
+    //                             panic!(
+    //                                 "nobody wants to handle this vm-exit: {:#x?}, vcpu: {:#x?}",
+    //                                 exit_info, vcpu
+    //                             );
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+
+    //         vcpu_device.check_events(vcpu)?;
+    //     }
+
+    //     Ok(())
+    // }
+
+    // #[cfg(feature = "type1_5")]
+    // #[allow(unreachable_code)]
+    // /// Run a specified [`VCpu`] on current logical vcpu.
+    // pub fn run_type15_vcpu(&mut self, vcpu_id: usize, linux: &LinuxContext) -> HyperResult {
+    //     let vcpu = self.get_vcpu(vcpu_id).unwrap();
+    //     vcpu.bind_to_current_processor()?;
+    //     loop {
+    //         if let Some(exit_info) = vcpu.run_type15(linux) {
+    //             match exit_info.exit_reason {
+    //                 VmxExitReason::VMCALL => {
+    //                     let regs = vcpu.regs();
+    //                     let id = regs.rax as u32;
+    //                     let args = (regs.rdi as usize, regs.rsi as usize, regs.rdx as usize);
+
+    //                     trace!("{:#x?}", regs);
+    //                     match self.hypercall_handler(vcpu, id, args) {
+    //                         Ok(result) => vcpu.regs_mut().rax = result as u64,
+    //                         Err(e) => panic!("Hypercall failed: {e:?}, hypercall id: {id:#x}, args: {args:#x?}, vcpu: {vcpu:#x?}"),
+    //                     }
+
+    //                     vcpu.advance_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
+    //                 }
+    //                 VmxExitReason::EXCEPTION_NMI => match self.nmi_handler(vcpu) {
+    //                     Ok(result) => vcpu.regs_mut().rax = result as u64,
+    //                     Err(e) => panic!("nmi_handler failed: {e:?}"),
+    //                 },
+
+    //                 VmxExitReason::EPT_VIOLATION => {
+    //                     let guest_rip = exit_info.guest_rip;
+    //                     let length = exit_info.exit_instruction_length;
+    //                     let instr = Self::decode_instr(
+    //                         Arc::new(self.inner_mut.get_mut().mem_set.nest_page_table()),
+    //                         vcpu,
+    //                         guest_rip,
+    //                         length,
+    //                     )
+    //                     .expect("decode instruction failed");
+    //                     self.inner_const
+    //                         .devices
+    //                         .handle_mmio_instruction(vcpu, &exit_info, Some(instr))
+    //                         .unwrap()?;
+    //                 }
+    //                 VmxExitReason::IO_INSTRUCTION => self
+    //                     .inner_const
+    //                     .devices
+    //                     .handle_io_instruction(vcpu, &exit_info)
+    //                     .unwrap()?,
+    //                 VmxExitReason::MSR_READ => self.inner_const.devices.handle_msr_read(vcpu)?,
+    //                 VmxExitReason::MSR_WRITE => self.inner_const.devices.handle_msr_write(vcpu)?,
+    //                 _ => {
+    //                     panic!(
+    //                         "nobody wants to handle this vm-exit: {:#x?}, vcpu: {:#x?}",
+    //                         exit_info, vcpu
+    //                     );
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
+    // /// Unbind the specified [`VCpu`] bond by [`VM::<H>::bind_vcpu`].
+    // pub fn unbind_vcpu(&mut self, vcpu_id: usize) -> HyperResult {
+    //     if self.vcpu_bond.contains(vcpu_id) {
+    //         match self.vcpus.get_vcpu_and_device(vcpu_id) {
+    //             Ok((vcpu, _)) => {
+    //                 self.vcpu_bond.remove(vcpu_id);
+    //                 vcpu.unbind_from_current_processor()?;
+    //                 Ok(())
+    //             }
+    //             Err(e) => Err(e),
+    //         }
+    //     } else {
+    //         Err(HyperError::InvalidParam)
+    //     }
+    // }
+
+    // /// Get per-vm devices.
+    // pub fn devices(&mut self) -> &mut GuestVMDevices<HyperCraftHalImpl, BarAllocImpl> {
+    //     &mut self.device
+    // }
 
     /// decode guest instruction
     pub fn decode_instr(
-        ept: Arc<GuestPageTable>,
+        &self,
         vcpu: &VCpu<HyperCraftHalImpl>,
         guest_rip: usize,
         length: u32,
     ) -> HyperResult<Instruction> {
-        let asm = Self::get_gva_content_bytes(ept, guest_rip, length, vcpu)?;
+        let asm = self
+            .inner_mut
+            .lock()
+            .mem_set
+            .get_gva_content_bytes(guest_rip, length, vcpu)?;
         let asm_slice = asm.as_slice();
         // Only one isntruction
         let mut decoder = Decoder::with_ip(64, asm_slice, guest_rip as u64, DecoderOptions::NONE);
@@ -395,120 +465,79 @@ impl<PD: PerCpuDevices<HyperCraftHalImpl>> VM<PD> {
         // debug!("Instruction: {}", output);
         Ok(instr)
     }
+}
 
-    /// get gva content bytes
-    pub fn get_gva_content_bytes(
-        ept: Arc<GuestPageTable>,
-        guest_rip: usize,
-        length: u32,
-        vcpu: &VCpu<HyperCraftHalImpl>,
-    ) -> HyperResult<Vec<u8>> {
-        // debug!(
-        //     "get_gva_content_bytes: guest_rip: {:#x}, length: {:#x}",
-        //     guest_rip, length
-        // );
-        let gva = vcpu.gla2gva(guest_rip);
-        // debug!("get_gva_content_bytes: gva: {:#x}", gva);
-        let gpa = Self::gva2gpa(ept.clone(), vcpu, gva)?;
-        // debug!("get_gva_content_bytes: gpa: {:#x}", gpa);
-        let hva = Self::gpa2hva(ept.clone(), gpa)?;
-        // debug!("get_gva_content_bytes: hva: {:#x}", hva);
-        let mut content = Vec::with_capacity(length as usize);
-        let code_ptr = hva as *const u8;
-        unsafe {
-            for i in 0..length {
-                let value_ptr = code_ptr.offset(i as isize);
-                content.push(value_ptr.read());
-            }
+pub fn hypercall_handler(
+    vcpu: &mut VCpu<HyperCraftHalImpl>,
+    id: u32,
+    args: (usize, usize, usize),
+) -> HyperResult<u32> {
+    // debug!("hypercall #{id:#x?}, args: {args:#x?}");
+    crate::hvc::handle_hvc(vcpu, id as usize, args)
+}
+
+pub fn nmi_handler(vcpu: &mut VCpu<HyperCraftHalImpl>) -> HyperResult<u32> {
+    use crate::nmi::{NmiMessage, CORE_NMI_LIST};
+    let current_cpu_id = current_cpu_id();
+    let current_core_id = axhal::cpu_id_to_core_id(current_cpu_id);
+    let msg = CORE_NMI_LIST[current_core_id].lock().pop();
+    match msg {
+        Some(NmiMessage::BootVm(vm_id)) => {
+            crate::vm::boot_vm(vm_id);
+            Ok(0)
         }
-        // debug!("get_gva_content_bytes: content: {:?}", content);
-        Ok(content)
-    }
+        None => {
+            warn!(
+                "CPU [{}] (Processor [{}])NMI VM-Exit",
+                current_cpu_id, current_core_id
+            );
+            let int_info = vcpu.interrupt_exit_info()?;
+            warn!(
+                "interrupt_exit_info:{:#x}\n{:#x?}\n{:#x?}",
+                vcpu.raw_interrupt_exit_info()?,
+                int_info,
+                vcpu
+            );
 
-    fn gpa2hva(ept: Arc<GuestPageTable>, gpa: GuestPhysAddr) -> HyperResult<HostVirtAddr> {
-        let hpa = Self::gpa2hpa(ept, gpa)?;
-        let hva = HyperCraftHalImpl::phys_to_virt(hpa);
-        Ok(hva as HostVirtAddr)
-    }
-
-    fn gpa2hpa(ept: Arc<GuestPageTable>, gpa: GuestPhysAddr) -> HyperResult<HostPhysAddr> {
-        ept.translate(gpa)
-    }
-
-    fn gva2gpa(
-        ept: Arc<GuestPageTable>,
-        vcpu: &VCpu<HyperCraftHalImpl>,
-        gva: GuestVirtAddr,
-    ) -> HyperResult<GuestPhysAddr> {
-        let guest_ptw_info = vcpu.get_ptw_info();
-        Self::page_table_walk(ept, guest_ptw_info, gva)
-    }
-
-    // suppose it is 4-level page table
-    fn page_table_walk(
-        ept: Arc<GuestPageTable>,
-        pw_info: GuestPageWalkInfo,
-        gva: GuestVirtAddr,
-    ) -> HyperResult<GuestPhysAddr> {
-        use x86_64::structures::paging::page_table::PageTableFlags as PTF;
-
-        // debug!("page_table_walk: gva: {:#x}\npw_info:{:#x?}", gva, pw_info);
-        const PHYS_ADDR_MASK: usize = 0x000f_ffff_ffff_f000; // bits 12..52
-        if pw_info.level <= 1 {
-            return Ok(gva as GuestPhysAddr);
-        }
-        let mut addr = pw_info.top_entry;
-        let mut current_level = pw_info.level;
-        let mut shift = 0;
-        let mut page_size = PAGE_SIZE_4K;
-
-        let mut entry = 0;
-
-        while current_level != 0 {
-            current_level -= 1;
-            // get page table base addr
-            addr = addr & PHYS_ADDR_MASK;
-
-            let base = Self::gpa2hva(ept.clone(), addr)?;
-            shift = (current_level * pw_info.width as usize) + 12;
-
-            let index = (gva >> shift) & ((1 << (pw_info.width as usize)) - 1);
-            page_size = 1 << shift;
-
-            // get page table entry pointer
-            let entry_ptr = unsafe { (base as *const usize).offset(index as isize) };
-
-            // next page table addr (gpa)
-            entry = unsafe { *entry_ptr };
-
-            let entry_flags = PTF::from_bits_retain(entry as u64);
-
-            // debug!("next page table entry {:#x} {:?}", entry, entry_flags);
-
-            /* check if the entry present */
-            if !entry_flags.contains(PTF::PRESENT) {
-                warn!(
-                    "GVA {:#x} l{} entry {:#x} not presented in its NPT",
-                    gva,
-                    current_level + 1,
-                    entry
+            if int_info.int_type == VmxInterruptionType::NMI {
+                unsafe { core::arch::asm!("int 2") }
+            } else {
+                // Reinject the event straight away.
+                debug!(
+                    "reinject to VM on CPU {} Processor {}",
+                    current_cpu_id, current_core_id
                 );
-                return Err(HyperError::BadState);
+                vcpu.queue_event(int_info.vector, int_info.err_code);
             }
+            // // System Control Port A (0x92)
+            // // BIT	Description
+            // // 4*	Watchdog timer status
 
-            // Check hugepage
-            if pw_info.pse && current_level > 0 && entry_flags.contains(PTF::HUGE_PAGE) {
-                break;
-            }
-
-            addr = entry;
+            // let value = unsafe { x86::io::inb(0x92) };
+            // warn!("System Control Port A value {:#x}", value);
+            // // System Control Port B (0x61)
+            // // Bit	Description
+            // // 6*	Channel check
+            // // 7*	Parity check
+            // // The Channel Check bit indicates a failure on the bus,
+            // // probably by a peripheral device such as a modem, sound card, NIC, etc,
+            // // while the Parity check bit indicates a memory read or write failure.
+            // let value = unsafe { x86::io::inb(0x61) };
+            // warn!("System Control Port B value {:#x}", value);
+            Ok(0)
         }
-
-        entry >>= shift;
-        /* shift left 12bit more and back to clear XD/Prot Key/Ignored bits */
-        entry <<= shift + 12;
-        entry >>= 12;
-
-        Ok((entry | (gva & (page_size - 1))) as GuestPhysAddr)
     }
+}
+
+pub fn external_interrupt_handler(vcpu: &mut VCpu<HyperCraftHalImpl>) -> HyperResult {
+    let int_info = vcpu.interrupt_exit_info()?;
+    debug!("VM-exit: external interrupt: {:#x?}", int_info);
+
+    if int_info.vector != 0xf0 {
+        panic!("VM-exit: external interrupt: {:#x?}", int_info);
+    }
+
+    assert!(int_info.valid);
+
+    crate::irq::dispatch_host_irq(int_info.vector as usize)
 }
