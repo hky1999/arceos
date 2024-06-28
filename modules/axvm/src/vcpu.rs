@@ -1,0 +1,167 @@
+use alloc::sync::{Arc, Weak};
+use alloc::vec::Vec;
+use anyhow::Ok;
+use spin::{Lazy, Mutex};
+
+use hypercraft::VCpu as ArchVCpu;
+use hypercraft::VmxExitReason;
+
+use axhal::{current_cpu_id, hv::HyperCraftHalImpl};
+
+use crate::config::entry::{VMCfgEntry, VmType};
+use crate::vm::VM;
+use crate::{Error, Result};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VcpuState {
+    Inv = 0,
+    Runnable = 1,
+    Running = 2,
+    Blocked = 3,
+}
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct Vcpu(pub Arc<VcpuInner>);
+
+impl PartialEq for Vcpu {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Vcpu {}
+
+#[allow(dead_code)]
+pub struct WeakVcpu(Weak<VcpuInner>);
+
+#[allow(dead_code)]
+impl WeakVcpu {
+    pub fn upgrade(&self) -> Option<Vcpu> {
+        self.0.upgrade().map(Vcpu)
+    }
+}
+
+pub struct VcpuInner {
+    inner_const: VcpuConst,
+    pub inner_mut: Mutex<VcpuInnerMut>,
+}
+
+struct VcpuConst {
+    id: usize,      // vcpu_id
+    vm: Weak<VM>,   // weak pointer to related Vm
+    phys_id: usize, // related physical CPU id
+}
+
+pub struct VcpuInnerMut {
+    state: VcpuState,
+    // int_list: Vec<usize>,
+    // regs: ArchVcpuRegs
+    arch_vcpu: ArchVCpu<HyperCraftHalImpl>,
+}
+
+impl VcpuInnerMut {
+    fn new(vcpu_id: usize) -> Self {
+        Self {
+            state: VcpuState::Inv,
+            // int_list: vec![],
+            arch_vcpu: ArchVCpu::<HyperCraftHalImpl>::new(vcpu_id)
+                .expect("Failed to construct vcpu"),
+        }
+    }
+}
+
+impl Vcpu {
+    pub(super) fn new(vm: Weak<VM>, vcpu_id: usize, phys_id: usize, _config: &VMCfgEntry) -> Self {
+        let inner_const = VcpuConst {
+            id: vcpu_id,
+            vm,
+            phys_id,
+        };
+        let inner = Arc::new(VcpuInner {
+            inner_const,
+            inner_mut: Mutex::new(VcpuInnerMut::new(vcpu_id)),
+        });
+        Self(inner)
+    }
+
+    pub fn init(&self, vm: Arc<VM>) -> Result {
+        let mut inner = self.0.inner_mut.lock();
+
+        let ept_root = vm.nest_page_table_root();
+        match vm.vm_type() {
+            VmType::VMTHostVM => {
+                inner
+                    .arch_vcpu
+                    .setup_from_host(ept_root, axhal::hv::get_linux_context())?;
+            }
+            _ => {
+                unimplemented!();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn vm(&self) -> Arc<VM> {
+        self.0.inner_const.vm.upgrade().unwrap()
+    }
+
+    pub fn run(&self) -> Result {
+        let mut inner = self.0.inner_mut.lock();
+        let mut vcpu = inner.arch_vcpu;
+        vcpu.bind_to_current_processor()?;
+        loop {
+            if let Some(exit_info) = vcpu.run() {
+                match exit_info.exit_reason {
+                    VmxExitReason::VMCALL => {
+                        const VM_EXIT_INSTR_LEN_VMCALL: u8 = 3;
+                        let regs = vcpu.regs();
+                        let id = regs.rax as u32;
+                        let args = (regs.rdi as usize, regs.rsi as usize, regs.rdx as usize);
+
+                        trace!("{:#x?}", regs);
+                        match super::hypercall_handler(&mut vcpu, id, args) {
+                            Ok(result) => vcpu.regs_mut().rax = result as u64,
+                            Err(e) => panic!("Hypercall failed: {e:?}, hypercall id: {id:#x}, args: {args:#x?}, vcpu: {vcpu:#x?}"),
+                        }
+
+                        vcpu.advance_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
+                    }
+                    VmxExitReason::EXCEPTION_NMI => match super::nmi_handler(&mut vcpu) {
+                        Ok(result) => vcpu.regs_mut().rax = result as u64,
+                        Err(e) => panic!("nmi_handler failed: {e:?}"),
+                    },
+
+                    VmxExitReason::EPT_VIOLATION => {
+                        let guest_rip = exit_info.guest_rip;
+                        let length = exit_info.exit_instruction_length;
+                        let vm = self.vm();
+                        let instr = vm
+                            .decode_instr(
+                                // Arc::new(self.inner_mut.get_mut().mem_set.nest_page_table()),
+                                &vcpu, guest_rip, length,
+                            )
+                            .expect("decode instruction failed");
+                        vm.devices()
+                            .handle_mmio_instruction(&mut vcpu, &exit_info, Some(instr))
+                            .unwrap()?;
+                    }
+                    VmxExitReason::IO_INSTRUCTION => self
+                        .vm()
+                        .devices()
+                        .handle_io_instruction(&mut vcpu, &exit_info)
+                        .unwrap()?,
+                    VmxExitReason::MSR_READ => self.vm().devices().handle_msr_read(&mut vcpu)?,
+                    VmxExitReason::MSR_WRITE => self.vm().devices().handle_msr_write(&mut vcpu)?,
+                    _ => {
+                        panic!(
+                            "nobody wants to handle this vm-exit: {:#x?}, vcpu: {:#x?}",
+                            exit_info, vcpu
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}

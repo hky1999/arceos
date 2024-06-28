@@ -5,13 +5,17 @@ use core::{
 };
 use memory_addr::PAGE_SIZE_4K;
 
-use hypercraft::{GuestPageTableTrait, GuestPhysAddr, HostPhysAddr, HyperCraftHal};
+use hypercraft::{
+    GuestPageTableTrait, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, HyperCraftHal,
+};
 
 use page_table_entry::MappingFlags;
 
-use crate::{Error, GuestPageTable, Result as HyperResult};
+use crate::{Error, Result as HyperResult};
 
 use axhal::hv::HyperCraftHalImpl;
+
+use super::GuestPageTable;
 
 pub const fn is_aligned(addr: usize) -> bool {
     (addr & (HyperCraftHalImpl::PAGE_SIZE - 1)) == 0
@@ -331,6 +335,127 @@ impl GuestPhysMemorySet {
     pub fn get_limit(&self, gpa: GuestPhysAddr) -> HyperResult<usize> {
         let region = self.lookup_region(gpa)?;
         Ok(region.gpa + region.size - gpa)
+    }
+}
+
+use crate::HostPhysAddr;
+use hypercraft::{GuestPageWalkInfo, VCpu};
+
+impl GuestPhysMemorySet {
+    pub fn gpa2hva(&self, gpa: GuestPhysAddr) -> HyperResult<HostVirtAddr> {
+        let hpa = self.gpa2hpa(gpa)?;
+        let hva = HyperCraftHalImpl::phys_to_virt(hpa);
+        Ok(hva as HostVirtAddr)
+    }
+
+    pub fn gpa2hpa(&self, gpa: GuestPhysAddr) -> HyperResult<HostPhysAddr> {
+        self.translate(gpa)
+    }
+
+    pub fn gva2gpa(
+        &self,
+        vcpu: &VCpu<HyperCraftHalImpl>,
+        gva: GuestVirtAddr,
+    ) -> HyperResult<GuestPhysAddr> {
+        let guest_ptw_info = vcpu.get_ptw_info();
+        self.page_table_walk(guest_ptw_info, gva)
+    }
+
+    // suppose it is 4-level page table
+    pub fn page_table_walk(
+        &self,
+        pw_info: GuestPageWalkInfo,
+        gva: GuestVirtAddr,
+    ) -> HyperResult<GuestPhysAddr> {
+        use x86_64::structures::paging::page_table::PageTableFlags as PTF;
+
+        // debug!("page_table_walk: gva: {:#x}\npw_info:{:#x?}", gva, pw_info);
+        const PHYS_ADDR_MASK: usize = 0x000f_ffff_ffff_f000; // bits 12..52
+        if pw_info.level <= 1 {
+            return Ok(gva as GuestPhysAddr);
+        }
+        let mut addr = pw_info.top_entry;
+        let mut current_level = pw_info.level;
+        let mut shift = 0;
+        let mut page_size = PAGE_SIZE_4K;
+
+        let mut entry = 0;
+
+        while current_level != 0 {
+            current_level -= 1;
+            // get page table base addr
+            addr = addr & PHYS_ADDR_MASK;
+
+            let base = self.gpa2hva(addr)?;
+            shift = (current_level * pw_info.width as usize) + 12;
+
+            let index = (gva >> shift) & ((1 << (pw_info.width as usize)) - 1);
+            page_size = 1 << shift;
+
+            // get page table entry pointer
+            let entry_ptr = unsafe { (base as *const usize).offset(index as isize) };
+
+            // next page table addr (gpa)
+            entry = unsafe { *entry_ptr };
+
+            let entry_flags = PTF::from_bits_retain(entry as u64);
+
+            // debug!("next page table entry {:#x} {:?}", entry, entry_flags);
+
+            /* check if the entry present */
+            if !entry_flags.contains(PTF::PRESENT) {
+                warn!(
+                    "GVA {:#x} l{} entry {:#x} not presented in its NPT",
+                    gva,
+                    current_level + 1,
+                    entry
+                );
+                return Err(HyperError::BadState);
+            }
+
+            // Check hugepage
+            if pw_info.pse && current_level > 0 && entry_flags.contains(PTF::HUGE_PAGE) {
+                break;
+            }
+
+            addr = entry;
+        }
+
+        entry >>= shift;
+        /* shift left 12bit more and back to clear XD/Prot Key/Ignored bits */
+        entry <<= shift + 12;
+        entry >>= 12;
+
+        Ok((entry | (gva & (page_size - 1))) as GuestPhysAddr)
+    }
+
+    /// get gva content bytes
+    pub fn get_gva_content_bytes(
+        &self,
+        guest_rip: usize,
+        length: u32,
+        vcpu: &VCpu<HyperCraftHalImpl>,
+    ) -> HyperResult<Vec<u8>> {
+        // debug!(
+        //     "get_gva_content_bytes: guest_rip: {:#x}, length: {:#x}",
+        //     guest_rip, length
+        // );
+        let gva = vcpu.gla2gva(guest_rip);
+        // debug!("get_gva_content_bytes: gva: {:#x}", gva);
+        let gpa = self.gva2gpa(vcpu, gva)?;
+        // debug!("get_gva_content_bytes: gpa: {:#x}", gpa);
+        let hva = self.gpa2hva(gpa)?;
+        // debug!("get_gva_content_bytes: hva: {:#x}", hva);
+        let mut content = Vec::with_capacity(length as usize);
+        let code_ptr = hva as *const u8;
+        unsafe {
+            for i in 0..length {
+                let value_ptr = code_ptr.offset(i as isize);
+                content.push(value_ptr.read());
+            }
+        }
+        // debug!("get_gva_content_bytes: content: {:?}", content);
+        Ok(content)
     }
 }
 
