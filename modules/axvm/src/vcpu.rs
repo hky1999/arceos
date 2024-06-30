@@ -65,14 +65,23 @@ impl VcpuInnerMut {
         Self {
             state: VcpuState::Inv,
             // int_list: vec![],
-            arch_vcpu: ArchVCpu::<HyperCraftHalImpl>::new(vcpu_id)
-                .expect("Failed to construct vcpu"),
+            arch_vcpu: ArchVCpu::<HyperCraftHalImpl>::new(
+                vcpu_id,
+                crate::arch::cpu_vmcs_revision_id(),
+            )
+            .expect("Failed to construct vcpu"),
         }
     }
 }
 
 impl Vcpu {
-    pub(super) fn new(vm: Weak<VM>, vcpu_id: usize, phys_id: usize, _config: &VMCfgEntry) -> Self {
+    pub(super) fn new(vm: Weak<VM>, vcpu_id: usize, phys_id: usize, config: &VMCfgEntry) -> Self {
+        debug!(
+            "New VCpu[v:{},p:{}] for VM[{}]",
+            vcpu_id,
+            phys_id,
+            config.vm_id()
+        );
         let inner_const = VcpuConst {
             id: vcpu_id,
             vm,
@@ -86,6 +95,7 @@ impl Vcpu {
     }
 
     pub fn init(&self, vm: Arc<VM>) -> HyperResult {
+        debug!("Init VCpu [{}] for VM[{}]", self.id(), vm.id());
         let mut inner = self.0.inner_mut.lock();
 
         let ept_root = vm.nest_page_table_root();
@@ -106,7 +116,13 @@ impl Vcpu {
         self.0.inner_const.vm.upgrade().unwrap()
     }
 
+    pub fn id(&self) -> usize {
+        self.0.inner_const.id
+    }
+
     pub fn run(&self) -> HyperResult {
+        debug!("Vcpu [{}] running...", self.id());
+
         let mut inner = self.0.inner_mut.lock();
         let vcpu = &mut inner.arch_vcpu;
         vcpu.bind_to_current_processor()?;

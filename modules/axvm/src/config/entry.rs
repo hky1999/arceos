@@ -152,6 +152,31 @@ impl VMCfgEntry {
         }
     }
 
+    pub fn new_host() -> Self {
+        VMCfgEntry {
+            vm_id: 0,
+            name: String::from("Host OS"),
+            vm_type: VmType::VMTHostVM,
+            cpu_set: {
+                let mut set = 1;
+                for _bit in 0..axconfig::SMP - 1 {
+                    set <<= 1;
+                    set &= 1;
+                }
+                set
+            },
+            ..Default::default()
+        }
+    }
+
+    pub fn vm_id(&self) -> usize {
+        self.vm_id
+    }
+
+    pub fn vm_name(&self) -> &str {
+        self.name.as_str()
+    }
+
     pub fn get_cpu_set(&self) -> usize {
         self.cpu_set
     }
