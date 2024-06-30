@@ -42,6 +42,26 @@ impl VMList {
             vm_list: BTreeMap::new(),
         }
     }
+
+    pub fn push_vm(&mut self, vm_id: usize, vm: Arc<VM>) {
+        if (self.vm_list.contains_key(&vm_id)) {
+            warn!(
+                "VM[{}] already exists, push VM failed, just return ...",
+                vm_id
+            );
+            return;
+        }
+        self.vm_list.insert(vm_id, vm);
+    }
+
+    #[allow(unused)]
+    pub fn remove_vm(&mut self, vm_id: usize) -> Option<Arc<VM>> {
+        self.vm_list.remove(&vm_id)
+    }
+
+    pub fn get_vm_by_id(&self, vm_id: usize) -> Option<Arc<VM>> {
+        self.vm_list.get(&vm_id).cloned()
+    }
 }
 
 static GLOBAL_VM_LIST: Mutex<VMList> = Mutex::new(VMList::new());
@@ -62,7 +82,7 @@ pub fn map_vcpu2pcpu(vm_id: u32, vcpu_id: u32, pcup_id: u32) {
 
 pub fn config_boot_linux() {
     let hart_id = current_cpu_id();
-    let vm_id = 0 as usize;
+    let mut vm_id = 0 as usize;
     let linux_context = axhal::hv::get_linux_context();
 
     crate::arch::cpu_hv_hardware_enable(hart_id, linux_context)
@@ -70,11 +90,12 @@ pub fn config_boot_linux() {
 
     if hart_id == 0 {
         super::config::init_root_gpm().expect("init_root_gpm failed");
-        let mvm_config = VMCfgEntry::default();
-        let mut mvm = VM::new(vm_id, mvm_config);
-        GLOBAL_VM_LIST.lock().vm_list.insert(vm_id, mvm);
+        let mvm_config = VMCfgEntry::new_host();
+        vm_id = mvm_config.vm_id();
+        let mut mvm = VM::new(mvm_config);
+        GLOBAL_VM_LIST.lock().push_vm(vm_id, mvm);
 
-        info!("CPU{} vm new success", hart_id);
+        info!("Host VM new success");
 
         INIT_GPM_OK.store(1, Ordering::Release);
     } else {
@@ -83,8 +104,8 @@ pub fn config_boot_linux() {
         }
     }
 
-    let mut vm_list_lock = GLOBAL_VM_LIST.lock();
-    let mut mvm = vm_list_lock.vm_list.get(&vm_id).unwrap();
+    // let mut vm_list_lock = ;
+    let mut mvm = GLOBAL_VM_LIST.lock().get_vm_by_id(vm_id).unwrap();
 
     info!("CPU{} add vcpu to vm...", hart_id);
 
@@ -100,7 +121,7 @@ pub fn config_boot_linux() {
 
     let vcpu = mvm.vcpu(hart_id).expect("VCPU {} not exist");
 
-    debug!("CPU{} before run vcpu", hart_id);
+    debug!("CPU{} before run vcpu {}", hart_id, vcpu.id());
     info!("{:?}", vcpu.run());
 
     // disable hardware virtualization todo
@@ -202,7 +223,8 @@ struct VmInnerConst {
 }
 
 impl VmInnerConst {
-    fn new(vm_id: usize, config: VMCfgEntry, vm: Weak<VM>) -> Self {
+    fn new(config: VMCfgEntry, vm: Weak<VM>) -> Self {
+        let vm_id = config.vm_id();
         let phys_id_list = config.get_physical_id_list();
         debug!("VM[{}] vcpu phys_id_list {:?}", vm_id, phys_id_list);
 
@@ -238,12 +260,17 @@ impl VmInnerMut {
 
 impl VM {
     /// Create a new [`VM`].
-    pub fn new(vm_id: usize, config: VMCfgEntry) -> Arc<Self> {
-        debug!("Constuct VM {vm_id}");
+    pub fn new(config: VMCfgEntry) -> Arc<Self> {
+        debug!(
+            "Constuct VM[{}] {} cpu_set {:#x}",
+            config.vm_id(),
+            config.vm_name(),
+            config.get_cpu_set()
+        );
         let mem_set = config.generate_guest_phys_memory_set().unwrap();
 
         let this = Arc::new_cyclic(|weak| VM {
-            inner_const: VmInnerConst::new(vm_id, config, weak.clone()),
+            inner_const: VmInnerConst::new(config, weak.clone()),
             inner_mut: Mutex::new(VmInnerMut::new(mem_set)),
         });
         for vcpu in this.vcpu_list() {
@@ -251,6 +278,11 @@ impl VM {
         }
 
         this
+    }
+
+    #[inline]
+    pub fn id(&self) -> usize {
+        self.inner_const.vm_id
     }
 
     #[inline]
