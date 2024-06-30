@@ -5,12 +5,12 @@ use spin::{Lazy, Mutex};
 
 use hypercraft::VCpu as ArchVCpu;
 use hypercraft::VmxExitReason;
+use hypercraft::{HyperError, HyperResult};
 
 use axhal::{current_cpu_id, hv::HyperCraftHalImpl};
 
 use crate::config::entry::{VMCfgEntry, VmType};
 use crate::vm::VM;
-use crate::{Error, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VcpuState {
@@ -85,7 +85,7 @@ impl Vcpu {
         Self(inner)
     }
 
-    pub fn init(&self, vm: Arc<VM>) -> Result {
+    pub fn init(&self, vm: Arc<VM>) -> HyperResult {
         let mut inner = self.0.inner_mut.lock();
 
         let ept_root = vm.nest_page_table_root();
@@ -99,16 +99,16 @@ impl Vcpu {
                 unimplemented!();
             }
         }
-        Ok(())
+        HyperResult::Ok(())
     }
 
     pub fn vm(&self) -> Arc<VM> {
         self.0.inner_const.vm.upgrade().unwrap()
     }
 
-    pub fn run(&self) -> Result {
+    pub fn run(&self) -> HyperResult {
         let mut inner = self.0.inner_mut.lock();
-        let mut vcpu = inner.arch_vcpu;
+        let vcpu = &mut inner.arch_vcpu;
         vcpu.bind_to_current_processor()?;
         loop {
             if let Some(exit_info) = vcpu.run() {
@@ -120,15 +120,15 @@ impl Vcpu {
                         let args = (regs.rdi as usize, regs.rsi as usize, regs.rdx as usize);
 
                         trace!("{:#x?}", regs);
-                        match super::hypercall_handler(&mut vcpu, id, args) {
-                            Ok(result) => vcpu.regs_mut().rax = result as u64,
+                        match super::hypercall_handler(vcpu, id, args) {
+                            HyperResult::Ok(result) => vcpu.regs_mut().rax = result as u64,
                             Err(e) => panic!("Hypercall failed: {e:?}, hypercall id: {id:#x}, args: {args:#x?}, vcpu: {vcpu:#x?}"),
                         }
 
                         vcpu.advance_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
                     }
-                    VmxExitReason::EXCEPTION_NMI => match super::nmi_handler(&mut vcpu) {
-                        Ok(result) => vcpu.regs_mut().rax = result as u64,
+                    VmxExitReason::EXCEPTION_NMI => match super::nmi_handler(vcpu) {
+                        HyperResult::Ok(result) => vcpu.regs_mut().rax = result as u64,
                         Err(e) => panic!("nmi_handler failed: {e:?}"),
                     },
 
@@ -143,16 +143,16 @@ impl Vcpu {
                             )
                             .expect("decode instruction failed");
                         vm.devices()
-                            .handle_mmio_instruction(&mut vcpu, &exit_info, Some(instr))
+                            .handle_mmio_instruction(vcpu, &exit_info, Some(instr))
                             .unwrap()?;
                     }
                     VmxExitReason::IO_INSTRUCTION => self
                         .vm()
                         .devices()
-                        .handle_io_instruction(&mut vcpu, &exit_info)
+                        .handle_io_instruction(vcpu, &exit_info)
                         .unwrap()?,
-                    VmxExitReason::MSR_READ => self.vm().devices().handle_msr_read(&mut vcpu)?,
-                    VmxExitReason::MSR_WRITE => self.vm().devices().handle_msr_write(&mut vcpu)?,
+                    VmxExitReason::MSR_READ => self.vm().devices().handle_msr_read(vcpu)?,
+                    VmxExitReason::MSR_WRITE => self.vm().devices().handle_msr_write(vcpu)?,
                     _ => {
                         panic!(
                             "nobody wants to handle this vm-exit: {:#x?}, vcpu: {:#x?}",
@@ -162,6 +162,6 @@ impl Vcpu {
                 }
             }
         }
-        Ok(())
+        HyperResult::Ok(())
     }
 }

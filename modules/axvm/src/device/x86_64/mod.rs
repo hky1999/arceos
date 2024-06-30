@@ -260,7 +260,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
     }
 
     pub fn handle_io_instruction(
-        &mut self,
+        &self,
         vcpu: &mut VCpu<H>,
         exit_info: &VmxExitInfo,
     ) -> Option<HyperResult> {
@@ -484,7 +484,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
     }
 
     pub fn handle_mmio_instruction(
-        &mut self,
+        &self,
         vcpu: &mut VCpu<H>,
         exit_info: &VmxExitInfo,
         instr: Option<Instruction>,
@@ -514,7 +514,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
         None
     }
 
-    pub fn handle_msr_read(&mut self, vcpu: &mut VCpu<H>) -> HyperResult {
+    pub fn handle_msr_read(&self, vcpu: &mut VCpu<H>) -> HyperResult {
         let msr = vcpu.regs().rcx as u32;
 
         if let Some(dev) = self.find_msr_device(msr) {
@@ -537,7 +537,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
         }
     }
 
-    pub fn handle_msr_write(&mut self, vcpu: &mut VCpu<H>) -> HyperResult {
+    pub fn handle_msr_write(&self, vcpu: &mut VCpu<H>) -> HyperResult {
         let msr = vcpu.regs().rcx as u32;
         let value = (vcpu.regs().rax & 0xffff_ffff) | (vcpu.regs().rdx << 32);
 

@@ -1,6 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use spin::Mutex;
@@ -157,24 +158,26 @@ impl VMCfgEntry {
 
     pub fn cpu_num(&self) -> usize {
         let mut cpu_num = 0;
-        while self.cpu_set != 0 {
-            if self.cpu_set & 1 != 0 {
+        let mut cpu_set = self.cpu_set;
+        while cpu_set != 0 {
+            if cpu_set & 1 != 0 {
                 cpu_num += 1;
             }
-            self.cpu_set >>= 1;
+            cpu_set >>= 1;
         }
         cpu_num
     }
 
     pub fn get_physical_id_list(&self) -> Vec<usize> {
+        let mut cpu_set = self.cpu_set;
         let mut phys_id_list = vec![];
         let mut phys_id = 0;
-        while self.cpu_set != 0 {
-            if self.cpu_set & 1 != 0 {
+        while cpu_set != 0 {
+            if cpu_set & 1 != 0 {
                 phys_id_list.push(phys_id);
             }
             phys_id += 1;
-            self.cpu_set >>= 1;
+            cpu_set >>= 1;
         }
         phys_id_list
     }
