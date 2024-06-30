@@ -30,6 +30,7 @@
 #![feature(asm_const)]
 #![feature(naked_functions)]
 #![feature(doc_auto_cfg)]
+#![feature(inline_const)]
 
 #[allow(unused_imports)]
 #[macro_use]

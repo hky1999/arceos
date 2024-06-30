@@ -166,7 +166,7 @@ fn primary_init_early(core_id: u32, linux_sp: usize) {
     // This should be called after `percpu` is init.
     // This should be called before operations related to dtables
     // to get a clean unmodified Linux context.
-    context::save_linux_context(linux_sp);
+    context::save_linux_context(core_id as _, linux_sp);
 
     self::uart16550::init();
     self::dtables::init_primary();
@@ -182,6 +182,6 @@ fn secondary_init_early(core_id: u32, linux_sp: usize) {
     // This should be called after `percpu` is init.
     // This should be called before operations related to dtables
     // to get a clean unmodified Linux context.
-    context::save_linux_context(linux_sp);
+    context::save_linux_context(core_id as _, linux_sp);
     self::dtables::init_secondary();
 }

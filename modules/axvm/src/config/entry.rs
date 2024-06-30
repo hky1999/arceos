@@ -161,8 +161,9 @@ impl VMCfgEntry {
                 let mut set = 1;
                 for _bit in 0..axconfig::SMP - 1 {
                     set <<= 1;
-                    set &= 1;
+                    set |= 1;
                 }
+                debug!("Construct Host Config, SMP {} set {}", axconfig::SMP, set);
                 set
             },
             ..Default::default()

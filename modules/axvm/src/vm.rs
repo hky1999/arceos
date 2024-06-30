@@ -83,7 +83,7 @@ pub fn map_vcpu2pcpu(vm_id: u32, vcpu_id: u32, pcup_id: u32) {
 pub fn config_boot_linux() {
     let hart_id = current_cpu_id();
     let mut vm_id = 0 as usize;
-    let linux_context = axhal::hv::get_linux_context();
+    let linux_context = axhal::hv::get_linux_context(hart_id);
 
     crate::arch::cpu_hv_hardware_enable(hart_id, linux_context)
         .expect("cpu_hv_hardware_enable failed");
@@ -109,11 +109,6 @@ pub fn config_boot_linux() {
 
     info!("CPU{} add vcpu to vm...", hart_id);
 
-    // map_vcpu2pcpu(vm_id, hart_id as u32, hart_id as u32);
-
-    // let vcpu = mvm.get_vcpu(hart_id).expect("bind vcpu failed");
-
-    // vcpu.bind_to_current_processor();
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     while INITED_CPUS.load(Ordering::Acquire) < axconfig::SMP {
         core::hint::spin_loop();
