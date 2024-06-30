@@ -1,4 +1,5 @@
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 use core::{
     clone,
     fmt::{Debug, Display, Formatter, Result},
@@ -338,7 +339,6 @@ impl GuestPhysMemorySet {
     }
 }
 
-use crate::HostPhysAddr;
 use hypercraft::{GuestPageWalkInfo, VCpu};
 
 impl GuestPhysMemorySet {
@@ -410,7 +410,7 @@ impl GuestPhysMemorySet {
                     current_level + 1,
                     entry
                 );
-                return Err(HyperError::BadState);
+                return Err(Error::BadState);
             }
 
             // Check hugepage

@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -100,13 +101,13 @@ pub fn config_boot_linux() {
     let vcpu = mvm.vcpu(hart_id).expect("VCPU {} not exist");
 
     debug!("CPU{} before run vcpu", hart_id);
-    info!("{:?}", mvm.run_type15_vcpu(hart_id, &linux_context));
+    info!("{:?}", vcpu.run());
 
     // disable hardware virtualization todo
 }
 
 pub fn boot_vm(vm_id: usize) {
-    let hart_id = current_cpu_id();
+    let _hart_id = current_cpu_id();
     let vm_cfg_entry = match vm_cfg_entry(vm_id) {
         Some(entry) => entry,
         None => {
@@ -171,11 +172,11 @@ use iced_x86::{Decoder, DecoderOptions, Formatter, Instruction, MasmFormatter, O
 
 use hypercraft::{
     GuestPageTableTrait, GuestPageWalkInfo, GuestPhysAddr, GuestVirtAddr, HostPhysAddr,
-    HostVirtAddr, HyperCraftHal, HyperError, HyperResult, LinuxContext, PerCpuDevices,
-    PerVmDevices, VmxExitReason,
+    HostVirtAddr, HyperCraftHal, LinuxContext, PerCpuDevices, PerVmDevices, VmxExitReason,
 };
 
 use crate::mm::{AddressSpace, GuestPhysMemorySet};
+use crate::Result;
 
 const VM_EXIT_INSTR_LEN_VMCALL: u8 = 3;
 
@@ -203,7 +204,7 @@ struct VmInnerConst {
 impl VmInnerConst {
     fn new(vm_id: usize, config: VMCfgEntry, vm: Weak<VM>) -> Self {
         let phys_id_list = config.get_physical_id_list();
-        debug!("VM[{}] vcpu phys_id_list {:?}", id, phys_id_list);
+        debug!("VM[{}] vcpu phys_id_list {:?}", vm_id, phys_id_list);
 
         let mut vcpu_list = Vec::with_capacity(config.cpu_num());
         for (vcpu_id, phys_id) in phys_id_list.into_iter().enumerate() {
@@ -220,7 +221,7 @@ impl VmInnerConst {
         this
     }
 
-    fn init_devices(&mut self, vm: Weak<VM>) -> bool {
+    fn init_devices(&mut self, _vm: Weak<VM>) -> bool {
         true
     }
 }
@@ -246,7 +247,7 @@ impl VM {
             inner_mut: Mutex::new(VmInnerMut::new(mem_set)),
         });
         for vcpu in this.vcpu_list() {
-            vcpu.init(this);
+            vcpu.init(this.clone());
         }
 
         this
@@ -281,7 +282,7 @@ impl VM {
     }
 
     // /// Bind the specified [`VCpu`] to current physical processor.
-    // pub fn bind_vcpu(&mut self, vcpu_id: usize) -> HyperResult<&mut VCpu<HyperCraftHalImpl>> {
+    // pub fn bind_vcpu(&mut self, vcpu_id: usize) -> Result<&mut VCpu<HyperCraftHalImpl>> {
     //     match self.inner_const.vcpus.get_vcpu(vcpu_id) {
     //         Ok(vcpu) => {
     //             vcpu.bind_to_current_processor()?;
@@ -293,7 +294,7 @@ impl VM {
 
     // #[allow(unreachable_code)]
     // /// Run a specified [`VCpu`] on current logical vcpu.
-    // pub fn run_vcpu(&mut self, vcpu_id: usize) -> HyperResult {
+    // pub fn run_vcpu(&mut self, vcpu_id: usize) -> Result {
     //     let (vcpu, vcpu_device) = self.vcpus.get_vcpu_and_device(vcpu_id).unwrap();
 
     //     loop {
@@ -364,7 +365,7 @@ impl VM {
     // #[cfg(feature = "type1_5")]
     // #[allow(unreachable_code)]
     // /// Run a specified [`VCpu`] on current logical vcpu.
-    // pub fn run_type15_vcpu(&mut self, vcpu_id: usize, linux: &LinuxContext) -> HyperResult {
+    // pub fn run_type15_vcpu(&mut self, vcpu_id: usize, linux: &LinuxContext) -> Result {
     //     let vcpu = self.get_vcpu(vcpu_id).unwrap();
     //     vcpu.bind_to_current_processor()?;
     //     loop {
@@ -422,7 +423,7 @@ impl VM {
     // }
 
     // /// Unbind the specified [`VCpu`] bond by [`VM::<H>::bind_vcpu`].
-    // pub fn unbind_vcpu(&mut self, vcpu_id: usize) -> HyperResult {
+    // pub fn unbind_vcpu(&mut self, vcpu_id: usize) -> Result {
     //     if self.vcpu_bond.contains(vcpu_id) {
     //         match self.vcpus.get_vcpu_and_device(vcpu_id) {
     //             Ok((vcpu, _)) => {
@@ -448,7 +449,7 @@ impl VM {
         vcpu: &VCpu<HyperCraftHalImpl>,
         guest_rip: usize,
         length: u32,
-    ) -> HyperResult<Instruction> {
+    ) -> Result<Instruction> {
         let asm = self
             .inner_mut
             .lock()
@@ -471,12 +472,12 @@ pub fn hypercall_handler(
     vcpu: &mut VCpu<HyperCraftHalImpl>,
     id: u32,
     args: (usize, usize, usize),
-) -> HyperResult<u32> {
+) -> Result<u32> {
     // debug!("hypercall #{id:#x?}, args: {args:#x?}");
     crate::hvc::handle_hvc(vcpu, id as usize, args)
 }
 
-pub fn nmi_handler(vcpu: &mut VCpu<HyperCraftHalImpl>) -> HyperResult<u32> {
+pub fn nmi_handler(vcpu: &mut VCpu<HyperCraftHalImpl>) -> Result<u32> {
     use crate::nmi::{NmiMessage, CORE_NMI_LIST};
     let current_cpu_id = current_cpu_id();
     let current_core_id = axhal::cpu_id_to_core_id(current_cpu_id);
@@ -529,7 +530,7 @@ pub fn nmi_handler(vcpu: &mut VCpu<HyperCraftHalImpl>) -> HyperResult<u32> {
     }
 }
 
-pub fn external_interrupt_handler(vcpu: &mut VCpu<HyperCraftHalImpl>) -> HyperResult {
+pub fn external_interrupt_handler(vcpu: &mut VCpu<HyperCraftHalImpl>) -> Result {
     let int_info = vcpu.interrupt_exit_info()?;
     debug!("VM-exit: external interrupt: {:#x?}", int_info);
 

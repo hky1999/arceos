@@ -1,3 +1,5 @@
+/// PageTable Manangment for `axvm`
+/// Todo: split this mod into `arch`.
 use axhal::mem::{PhysAddr, VirtAddr};
 
 use hypercraft::{GuestPageTableTrait, GuestPhysAddr, HyperError, HyperResult, NestedPageTable};
@@ -59,7 +61,7 @@ impl GuestPageTableTrait for GuestPageTable {
                     axhal::paging::PageSize::Size4K,
                     flags,
                 )
-                .map_err(|paging_err: axhal::paging::PagingError| {
+                .map_err(|paging_err| {
                     error!("paging error: {:?}", paging_err);
                     HyperError::Internal
                 })?;
@@ -178,8 +180,8 @@ impl GuestPageTableTrait for GuestPageTable {
     }
 }
 
-// impl GuestPageTable {
-//     pub fn root_paddr(&self) -> PhysAddr {
-//         self.0.root_paddr()
-//     }
-// }
+impl GuestPageTable {
+    pub fn root_paddr(&self) -> PhysAddr {
+        self.0.root_paddr()
+    }
+}
