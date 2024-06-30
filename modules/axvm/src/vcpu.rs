@@ -101,9 +101,10 @@ impl Vcpu {
         let ept_root = vm.nest_page_table_root();
         match vm.vm_type() {
             VmType::VMTHostVM => {
-                inner
-                    .arch_vcpu
-                    .setup_from_host(ept_root, axhal::hv::get_linux_context())?;
+                inner.arch_vcpu.setup_from_host(
+                    ept_root,
+                    axhal::hv::get_linux_context(self.0.inner_const.phys_id),
+                )?;
             }
             _ => {
                 unimplemented!();
