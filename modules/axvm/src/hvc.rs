@@ -117,7 +117,7 @@ fn ax_hvc_create_vm(cfg: &mut AxVMCreateArg) -> Result<u32> {
         }
     }
 
-    let mut vm_cfg_entry = VMCfgEntry::new(
+    let mut vm_cfg = VMCfgEntry::new(
         String::from("Guest VM"),
         VmType::from(cfg.vm_type),
         String::from("guest cmdline"),
@@ -137,15 +137,14 @@ fn ax_hvc_create_vm(cfg: &mut AxVMCreateArg) -> Result<u32> {
         }
     };
 
-    vm_cfg_entry.memory_region_editor(mm_setup_fn);
+    vm_cfg.memory_region_editor(mm_setup_fn);
 
-    vm_cfg_entry.set_up_memory_region()?;
+    vm_cfg.set_up_memory_region()?;
 
     // These fields should be set by hypervisor and read by Linux kernel module.
-    (cfg.bios_load_hpa, cfg.kernel_load_hpa, cfg.ramdisk_load_hpa) =
-        vm_cfg_entry.get_img_load_info();
+    (cfg.bios_load_hpa, cfg.kernel_load_hpa, cfg.ramdisk_load_hpa) = vm_cfg.get_img_load_info();
 
-    let vm_id = vm_cfg_add_vm_entry(vm_cfg_entry)?;
+    let vm_id = vm_cfg_add_vm_entry(vm_cfg)?;
 
     // This field should be set by hypervisor and read by Linux kernel module.
     cfg.vm_id = vm_id;
@@ -154,15 +153,15 @@ fn ax_hvc_create_vm(cfg: &mut AxVMCreateArg) -> Result<u32> {
 }
 
 fn ax_hvc_boot_vm(vm_id: usize) {
-    let vm_cfg_entry = match vm_cfg_entry(vm_id) {
+    let vm_cfg = match vm_cfg_entry(vm_id) {
         Some(entry) => entry,
         None => {
             warn!("VM {} not existed, boot vm failed", vm_id);
             return;
         }
     };
-    let cpuset = vm_cfg_entry.get_cpu_set();
-    let vm_type = vm_cfg_entry.get_vm_type();
+    let cpuset = vm_cfg.get_cpu_set();
+    let vm_type = vm_cfg.get_vm_type();
 
     info!("boot VM {} {:?} on cpuset {:#x}", vm_id, vm_type, cpuset);
 
