@@ -119,6 +119,8 @@ pub struct VMCfgEntry {
     img_cfg: VMImgCfg,
 
     memory_regions: Vec<GuestMemoryRegion>,
+    /// Physical pages allocated for this VM's RAM.
+    /// Todo: this should be move to VM structure.
     physical_pages: BTreeMap<usize, GlobalPage>,
     // memory_set: Option<Arc<RwLock<GuestPhysMemorySet>>>,
 }
@@ -361,12 +363,11 @@ pub fn vm_cfg_entry(vm_id: usize) -> Option<Arc<VMCfgEntry>> {
 /* Add VM config entry to DEF_VM_CONFIG_TABLE
  *
  * @param[in] vm_cfg_entry: new added VM config entry.
- * @param[out] vm_id: the VM id of newly added VM.
  */
-pub fn vm_cfg_add_vm_entry(mut vm_cfg_entry: VMCfgEntry) -> Result<usize> {
+pub fn vm_cfg_add_vm_entry(mut vm_cfg: VMCfgEntry) -> Result<usize> {
     let mut vm_configs = GLOBAL_VM_CFG_TABLE.lock();
     let vm_id = vm_configs.generate_vm_id()?;
-    vm_cfg_entry.vm_id = vm_id;
-    vm_configs.entries.insert(vm_id, Arc::new(vm_cfg_entry));
+    vm_cfg.vm_id = vm_id;
+    vm_configs.entries.insert(vm_id, Arc::new(vm_cfg));
     Ok(vm_id)
 }

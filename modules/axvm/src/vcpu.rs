@@ -94,7 +94,7 @@ impl Vcpu {
         Self(inner)
     }
 
-    pub fn init(&self, vm: Arc<VM>) -> HyperResult {
+    pub fn init(&self, vm: &VM) -> HyperResult {
         debug!("Init VCpu [{}] for VM[{}]", self.id(), vm.id());
         let mut inner = self.0.inner_mut.lock();
 
@@ -106,8 +106,12 @@ impl Vcpu {
                     axhal::hv::get_linux_context(self.0.inner_const.phys_id),
                 )?;
             }
+            VmType::VmTLinux | VmType::VmTLinux => {
+                inner.arch_vcpu.setup(ept_root, vm.config().get_vm_entry())?;
+            }
             _ => {
-                unimplemented!();
+                warn!("Illegal VM Type");
+                return HyperResult::Err(HyperError::InvalidParam);
             }
         }
         HyperResult::Ok(())
@@ -137,14 +141,14 @@ impl Vcpu {
                         let args = (regs.rdi as usize, regs.rsi as usize, regs.rdx as usize);
 
                         trace!("{:#x?}", regs);
-                        match super::hypercall_handler(vcpu, id, args) {
+                        match crate::handlers::hypercall_handler(vcpu, id, args) {
                             HyperResult::Ok(result) => vcpu.regs_mut().rax = result as u64,
                             Err(e) => panic!("Hypercall failed: {e:?}, hypercall id: {id:#x}, args: {args:#x?}, vcpu: {vcpu:#x?}"),
                         }
 
                         vcpu.advance_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
                     }
-                    VmxExitReason::EXCEPTION_NMI => match super::nmi_handler(vcpu) {
+                    VmxExitReason::EXCEPTION_NMI => match crate::handlers::nmi_handler(vcpu) {
                         HyperResult::Ok(result) => vcpu.regs_mut().rax = result as u64,
                         Err(e) => panic!("nmi_handler failed: {e:?}"),
                     },
