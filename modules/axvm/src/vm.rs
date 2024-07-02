@@ -19,14 +19,12 @@ use hypercraft::{
 };
 use memory_addr::PAGE_SIZE_4K;
 
-#[cfg(target_arch = "x86_64")]
-use super::device::{self, X64VcpuDevices};
 use crate::GuestPageTable;
 use alloc::sync::{Arc, Weak};
 use axhal::{current_cpu_id, hv::HyperCraftHalImpl};
 
 use crate::config::{vm_cfg_entry, VMCfgEntry, VmType};
-use crate::device::{BarAllocImpl, DeviceList};
+use crate::device::{self, BarAllocImpl, DeviceList};
 
 // use spin::RwLock;
 
@@ -133,7 +131,7 @@ impl VmInnerConst {
             config,
             vcpu_list: vcpu_list.into_boxed_slice(),
             // emu_devs: vec![],
-            devices: DeviceList::new(Some(0), Some(vm_id as u32)),
+            devices: DeviceList::new(vm_id),
         };
         this.init_devices();
         this
