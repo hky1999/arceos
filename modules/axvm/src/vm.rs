@@ -20,12 +20,12 @@ use hypercraft::{
 use memory_addr::PAGE_SIZE_4K;
 
 #[cfg(target_arch = "x86_64")]
-use super::device::{self, GuestVMDevices, X64VcpuDevices, X64VmDevices};
+use super::device::{self, X64VcpuDevices};
 use crate::GuestPageTable;
 use alloc::sync::{Arc, Weak};
 use axhal::{current_cpu_id, hv::HyperCraftHalImpl};
 
-use crate::config::entry::{vm_cfg_entry, VMCfgEntry, VmType};
+use crate::config::{vm_cfg_entry, VMCfgEntry, VmType};
 use crate::device::{BarAllocImpl, DeviceList};
 
 // use spin::RwLock;
@@ -128,13 +128,19 @@ impl VmInnerConst {
         for (vcpu_id, phys_id) in phys_id_list.into_iter().enumerate() {
             vcpu_list.push(Vcpu::new(vm.clone(), vcpu_id, phys_id, &config));
         }
-        Self {
+        let mut this = Self {
             vm_id,
             config,
             vcpu_list: vcpu_list.into_boxed_slice(),
             // emu_devs: vec![],
             devices: DeviceList::new(Some(0), Some(vm_id as u32)),
-        }
+        };
+        this.init_devices();
+        this
+    }
+
+    fn init_devices(&mut self) {
+        self.devices.init(self.config.clone())
     }
 }
 
@@ -165,7 +171,6 @@ impl VM {
         });
 
         this.init_vcpus();
-        this.init_devices();
 
         this
     }
@@ -203,18 +208,13 @@ impl VM {
         self.inner_mut.lock().mem_set.nest_page_table_root()
     }
 
-    /// Init Vcpu Context.
+    /// Init Vcpu Context for each vcpu.
     fn init_vcpus(&self) {
         for vcpu in self.vcpu_list() {
-            vcpu.init(self);
+            vcpu.init(self).expect("Failed to init vcpu");
         }
     }
 
-    /// Init devices.
-    fn init_devices(&self) {
-        // self.inner_const.init_devices(vm)
-    }
-   
     /// decode guest instruction
     pub fn decode_instr(
         &self,

@@ -56,7 +56,7 @@ pub use hypercraft::{PerCpuDevices, PerVmDevices, VmxExitReason};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use alloc::sync::Arc;
 
-use crate::config::entry::VMCfgEntry;
+use crate::config::VMCfgEntry;
 use axhal::current_cpu_id;
 
 // use super::type1_5::cell;

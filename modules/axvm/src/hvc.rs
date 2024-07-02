@@ -4,7 +4,7 @@ use axhal::current_cpu_id;
 use axhal::mem::{phys_to_virt, PhysAddr};
 use hypercraft::{GuestPhysAddr, HostPhysAddr};
 
-use crate::config::entry::{vm_cfg_add_vm_entry, vm_cfg_entry, VMCfgEntry, VmType};
+use crate::config::{vm_cfg_add_vm_entry, vm_cfg_entry, VMCfgEntry, VmType};
 use crate::Error;
 use crate::{nmi::nmi_send_msg_by_core_id, nmi::NmiMessage, HyperCraftHal, Result, VCpu};
 // use axhal::hv::HyperCraftHalImpl;

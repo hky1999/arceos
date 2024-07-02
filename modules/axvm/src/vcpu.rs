@@ -9,7 +9,7 @@ use hypercraft::{HyperError, HyperResult};
 
 use axhal::{current_cpu_id, hv::HyperCraftHalImpl};
 
-use crate::config::entry::{VMCfgEntry, VmType};
+use crate::config::{VMCfgEntry, VmType};
 use crate::vm::VM;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,8 +106,24 @@ impl Vcpu {
                     axhal::hv::get_linux_context(self.0.inner_const.phys_id),
                 )?;
             }
-            VmType::VmTLinux | VmType::VmTLinux => {
-                inner.arch_vcpu.setup(ept_root, vm.config().get_vm_entry())?;
+            VmType::VmTLinux | VmType::VmTNimbOS => {
+                inner
+                    .arch_vcpu
+                    .setup(ept_root, vm.config().get_vm_entry())?;
+                for pio_range in vm.devices().intercepted_port_ranges() {
+                    debug!("Intercept Ports {:#x?} for VM[{}]", pio_range, vm.id());
+                    inner.arch_vcpu.set_io_intercept_of_range(
+                        pio_range.start as u32,
+                        pio_range.count() as u32,
+                        true,
+                    );
+                }
+                for msr_range in vm.devices().intercepted_msr_ranges() {
+                    debug!("Intercept MSRs {:#x?} for VM[{}]", msr_range, vm.id());
+                    for msr in msr_range {
+                        inner.arch_vcpu.set_msr_intercept_of_range(msr, true);
+                    }
+                }
             }
             _ => {
                 warn!("Illegal VM Type");
