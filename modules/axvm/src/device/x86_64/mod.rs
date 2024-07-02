@@ -89,8 +89,7 @@ fn getcc(access_size: u8, x: u64, y: u64) -> u64 {
 }
 
 pub struct DeviceList<H: HyperCraftHal, B: BarAllocTrait> {
-    vm_id: Option<u32>,
-    vcpu_id: Option<u32>,
+    vm_id: usize,
     /// Emulated Memory I/O devices.
     memory_io_devices: Vec<Arc<Mutex<dyn MmioOps>>>,
     /// Emulated PCI devices.
@@ -109,7 +108,7 @@ pub struct DeviceList<H: HyperCraftHal, B: BarAllocTrait> {
 }
 
 impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
-    pub fn new(vcpu_id: Option<u32>, vm_id: Option<u32>) -> Self {
+    pub fn new(vm_id: usize) -> Self {
         let bundle = Arc::new(Mutex::new(Bundle::new()));
         let pic: [Arc<Mutex<device_emu::I8259Pic>>; 2] = [
             Arc::new(Mutex::new(device_emu::I8259Pic::new(0x20))),
@@ -117,7 +116,6 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
         ];
         Self {
             vm_id,
-            vcpu_id,
             port_io_devices: vec![],
             memory_io_devices: vec![],
             msr_devices: vec![],
@@ -185,14 +183,13 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
     }
 
     fn init_pci_host(&mut self) {
-        if let Some(vm_id) = self.vm_id {
-            let pci_host = PciHost::new(Some(Arc::new(super::virtio::VirtioMsiIrqManager {
-                vm_id: self.vm_id.expect("None vm for pci host"),
-            })));
-            self.pci_devices = Some(Arc::new(Mutex::new(pci_host)));
-        } else {
-            panic!("this is not vm devicelist. vm_id is None");
-        }
+        let pci_host = PciHost::new(Some(Arc::new(super::virtio::VirtioMsiIrqManager {
+            vm_id: self.vm_id as u32,
+        })));
+
+        let pci_devices = Arc::new(Mutex::new(pci_host));
+        self.add_port_io_device(pci_devices.clone());
+        self.pci_devices = Some(pci_devices);
     }
 
     fn add_pci_device(
@@ -649,206 +646,6 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
     }
 }
 
-pub struct X64VcpuDevices<H: HyperCraftHal, B: BarAllocTrait> {
-    pub(crate) apic_timer: Arc<Mutex<VirtLocalApic>>,
-    pub(crate) bundle: Arc<Mutex<Bundle>>,
-    pub(crate) devices: DeviceList<H, B>,
-    // pub(crate) console: Arc<Mutex<device_emu::Uart16550<device_emu::MultiplexConsoleBackend>>>,
-    pub(crate) pic: [Arc<Mutex<device_emu::I8259Pic>>; 2],
-    last: Option<u64>,
-    marker: PhantomData<H>,
-}
-
-impl<H: HyperCraftHal, B: BarAllocTrait + 'static> PerCpuDevices<H> for X64VcpuDevices<H, B> {
-    fn new(vcpu: &VCpu<H>) -> HyperResult<Self> {
-        let apic_timer = Arc::new(Mutex::new(VirtLocalApic::new()));
-        let bundle = Arc::new(Mutex::new(Bundle::new()));
-        let pic: [Arc<Mutex<device_emu::I8259Pic>>; 2] = [
-            Arc::new(Mutex::new(device_emu::I8259Pic::new(0x20))),
-            Arc::new(Mutex::new(device_emu::I8259Pic::new(0xA0))),
-        ];
-
-        let mut devices = DeviceList::new(Some(vcpu.vcpu_id() as u32), None);
-
-        let mut pmio_devices: Vec<Arc<Mutex<dyn PioOps>>> = vec![
-            // These are all fully emulated consoles!!!
-            // 0x3f8, 0x3f8 + 8
-            Arc::new(Mutex::new(<device_emu::Uart16550>::new(0x3f8))), // COM1
-            // 0x2f8, 0x2f8 + 8
-            Arc::new(Mutex::new(<device_emu::Uart16550>::new(0x2f8))), // COM2
-            // 0x3e8, 0x3e8 + 8
-            Arc::new(Mutex::new(<device_emu::Uart16550>::new(0x3e8))), // COM3
-            // 0x2e8, 0x2e8 + 8
-            Arc::new(Mutex::new(<device_emu::Uart16550>::new(0x2e8))), // COM4
-            // 0x20, 0x20 + 2
-            pic[0].clone(), // PIC1
-            // 0xa0, 0xa0 + 2
-            pic[1].clone(), // PIC2
-            // 0x80, 0x80 + 1
-            Arc::new(Mutex::new(device_emu::DebugPort::new(0x80))), // Debug Port
-            /*
-               the complexity:
-               - port 0x70 and 0x71 is for CMOS, but bit 7 of 0x70 is for NMI
-               - port 0x40 ~ 0x43 is for PIT, but port 0x61 is also related
-            */
-            // 0x92, 0x92 + 1
-            Arc::new(Mutex::new(Bundle::proxy_system_control_a(&bundle))),
-            // 0x61, 0x61 + 1
-            Arc::new(Mutex::new(Bundle::proxy_system_control_b(&bundle))),
-            // 0x70, 0x70 + 2
-            Arc::new(Mutex::new(Bundle::proxy_cmos(&bundle))),
-            // 0x40, 0x40 + 4
-            Arc::new(Mutex::new(Bundle::proxy_pit(&bundle))),
-            // 0xf0, 0xf0 + 2
-            Arc::new(Mutex::new(device_emu::Dummy::new(0xf0, 2))), // 0xf0 and 0xf1 are ports about fpu
-            // 0x3d4, 0x3d4 + 2
-            Arc::new(Mutex::new(device_emu::Dummy::new(0x3d4, 2))), // 0x3d4 and 0x3d5 are ports about vga
-            // 0x87, 0x87 + 1
-            Arc::new(Mutex::new(device_emu::Dummy::new(0x87, 1))), // 0x87 is a port about dma
-            // 0x60, 0x60 + 1
-            Arc::new(Mutex::new(device_emu::Dummy::new(0x60, 1))), // 0x60 and 0x64 are ports about ps/2 controller
-            // 0x64, 0x64 + 1
-            Arc::new(Mutex::new(device_emu::Dummy::new(0x64, 1))), //
-                                                                   // Arc::new(Mutex::new(device_emu::PCIConfigurationSpace::new(0xcf8))),
-                                                                   // Arc::new(Mutex::new(device_emu::PCIPassthrough::new(0xcf8))),
-        ];
-        devices.add_port_io_devices(&mut pmio_devices);
-
-        devices.add_msr_device(Arc::new(Mutex::new(device_emu::ProxyLocalApic::new())));
-        devices.add_msr_device(Arc::new(Mutex::new(ApicBaseMsrHandler {})));
-        // linux read this amd-related msr on my intel cpu for some unknown reason... make it happy
-        devices.add_msr_device(Arc::new(Mutex::new(device_emu::MsrDummy::new(0xc0011029))));
-        const IA32_UMWAIT_CONTROL: u32 = 0xe1;
-        devices.add_msr_device(Arc::new(Mutex::new(device_emu::MsrDummy::new(
-            IA32_UMWAIT_CONTROL,
-        ))));
-
-        Ok(Self {
-            apic_timer,
-            bundle,
-            devices,
-            pic,
-            last: None,
-            marker: PhantomData,
-        })
-    }
-
-    fn vmexit_handler(
-        &mut self,
-        vcpu: &mut VCpu<H>,
-        exit_info: &VmExitInfo,
-    ) -> Option<HyperResult> {
-        match exit_info.exit_reason {
-            VmxExitReason::IO_INSTRUCTION => self.devices.handle_io_instruction(vcpu, exit_info),
-            VmxExitReason::MSR_READ => Some(self.devices.handle_msr_read(vcpu)),
-            VmxExitReason::MSR_WRITE => Some(self.devices.handle_msr_write(vcpu)),
-            _ => None,
-        }
-    }
-
-    fn hypercall_handler(
-        &mut self,
-        vcpu: &mut VCpu<H>,
-        id: u32,
-        args: (usize, usize, usize),
-    ) -> HyperResult<u32> {
-        // debug!("hypercall #{id:#x?}, args: {args:#x?}");
-        crate::hvc::handle_hvc(vcpu, id as usize, args)
-    }
-
-    fn nmi_handler(&mut self, vcpu: &mut VCpu<H>) -> HyperResult<u32> {
-        let current_cpu_id = current_cpu_id();
-        let current_core_id = axhal::cpu_id_to_core_id(current_cpu_id);
-        let msg = CORE_NMI_LIST[current_core_id].lock().pop();
-        match msg {
-            Some(NmiMessage::BootVm(vm_id)) => {
-                crate::vm::boot_vm(vm_id);
-                Ok(0)
-            }
-            None => {
-                warn!(
-                    "CPU [{}] (Processor [{}])NMI VM-Exit",
-                    current_cpu_id, current_core_id
-                );
-                let int_info = vcpu.interrupt_exit_info()?;
-                warn!(
-                    "interrupt_exit_info:{:#x}\n{:#x?}\n{:#x?}",
-                    vcpu.raw_interrupt_exit_info()?,
-                    int_info,
-                    vcpu
-                );
-
-                if int_info.int_type == VmxInterruptionType::NMI {
-                    unsafe { core::arch::asm!("int 2") }
-                } else {
-                    // Reinject the event straight away.
-                    debug!(
-                        "reinject to VM on CPU {} Processor {}",
-                        current_cpu_id, current_core_id
-                    );
-                    vcpu.queue_event(int_info.vector, int_info.err_code);
-                }
-                // // System Control Port A (0x92)
-                // // BIT	Description
-                // // 4*	Watchdog timer status
-
-                // let value = unsafe { x86::io::inb(0x92) };
-                // warn!("System Control Port A value {:#x}", value);
-                // // System Control Port B (0x61)
-                // // Bit	Description
-                // // 6*	Channel check
-                // // 7*	Parity check
-                // // The Channel Check bit indicates a failure on the bus,
-                // // probably by a peripheral device such as a modem, sound card, NIC, etc,
-                // // while the Parity check bit indicates a memory read or write failure.
-                // let value = unsafe { x86::io::inb(0x61) };
-                // warn!("System Control Port B value {:#x}", value);
-                Ok(0)
-            }
-        }
-    }
-
-    fn check_events(&mut self, vcpu: &mut VCpu<H>) -> HyperResult {
-        if self.apic_timer.lock().inner.check_interrupt() {
-            vcpu.queue_event(self.apic_timer.lock().inner.vector(), None);
-        }
-
-        // it's naive but it works.
-        // inject 0x30(irq 0) every 1 ms after 5 seconds after booting.
-        match self.last {
-            Some(last) => {
-                let now = axhal::time::current_time_nanos();
-                if now > 1_000_000 + last {
-                    // debug!(
-                    //     "vcpu [{}] check events current {} last {} tick {} ns",
-                    //     vcpu.vcpu_id(),
-                    //     now,
-                    //     last,
-                    //     now - last,
-                    // );
-                    if !self.pic[0].lock().mask().get_bit(0) {
-                        vcpu.queue_event(0x30, None);
-                        let _mask = self.pic[0].lock().mask();
-                        // debug!("0x30 queued, mask {_mask:#x}");
-                    }
-                    self.last = Some(now);
-                }
-            }
-            None => {
-                self.last = Some(axhal::time::current_time_nanos() + 5_000_000_000);
-                // debug!(
-                //     "vcpu [{}] check events last set to {} ns",
-                //     vcpu.vcpu_id(),
-                //     self.last.unwrap()
-                // );
-            }
-        }
-
-        Ok(())
-    }
-}
-
-
 fn get_access_size(instruction: Instruction) -> HyperResult<u8> {
     // only consider
     match instruction.code() {
@@ -869,9 +666,9 @@ fn get_access_size(instruction: Instruction) -> HyperResult<u8> {
     }
 }
 
-impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
-    pub fn new(vm_id: u32, sys_mem: Arc<AddressSpace>) -> HyperResult<Self> {
-        let mut devices = DeviceList::new(None, Some(vm_id));
+// impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
+//     pub fn new(vm_id: u32, sys_mem: Arc<AddressSpace>) -> HyperResult<Self> {
+//         let mut devices = DeviceList::new(vm_id as usize);
         // init pci device
         // devices.init_pci_host();
         // devices.add_port_io_device(devices.pci_devices.clone().unwrap());
@@ -895,12 +692,12 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
         //     sys_mem,
         // )?;
 
-        Ok(Self {
-            marker: PhantomData,
-            devices,
-        })
-    }
-}
+//         Ok(Self {
+//             marker: PhantomData,
+//             devices,
+//         })
+//     }
+// }
 
 fn get_instr_data(
     instruction: Instruction,
