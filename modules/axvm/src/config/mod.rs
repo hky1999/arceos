@@ -51,4 +51,5 @@ pub use gpm_def::{init_root_gpm, root_gpm};
 pub mod linux_cfg_def;
 pub mod nimbos_cfg_def;
 
-pub mod entry;
+mod entry;
+pub use entry::*;
