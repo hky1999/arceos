@@ -175,7 +175,6 @@ impl Vcpu {
                         let vm = self.vm();
                         let instr = vm
                             .decode_instr(
-                                // Arc::new(self.inner_mut.get_mut().mem_set.nest_page_table()),
                                 &vcpu, guest_rip, length,
                             )
                             .expect("decode instruction failed");

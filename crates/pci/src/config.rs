@@ -395,7 +395,10 @@ impl MmioOps for Bar {
     }
 
     fn read(&mut self, addr: u64, access_size: u8) -> hypercraft::HyperResult<u64> {
-        // debug!("this is mmio read addr:{:#x}", addr);
+        debug!(
+            "this is mmio read addr:{:#x} access_size {:#x}",
+            addr, access_size
+        );
         if self.ops.is_some() {
             let offset = addr - self.address;
             let read_func = &*self.ops.as_ref().unwrap().read;

@@ -1,4 +1,5 @@
 pub mod device;
+mod features;
 mod queue;
 mod transport;
 
@@ -522,6 +523,7 @@ pub trait VirtioDevice: Send + AsAny {
     fn init_config_features(&mut self) -> Result<()>;
 
     /// Get device features from host.
+    /// Initiated in `init_config_features()`.
     fn device_features(&self, features_select: u32) -> u32 {
         read_u32(self.virtio_base().device_features, features_select)
     }
@@ -535,6 +537,11 @@ pub trait VirtioDevice: Send + AsAny {
                 "Receive acknowledge request with unknown feature: {:x}",
                 write_u32(value, page)
             );
+            warn!(
+                "Unsupported_features: {:?}",
+                features::BlkFeature::from_bits_retain(write_u32(unsupported_features, page)),
+            );
+
             v &= !unsupported_features;
         }
 
@@ -544,6 +551,11 @@ pub trait VirtioDevice: Send + AsAny {
             (v as u64) << 32 | (self.driver_features(0) as u64)
         };
         self.virtio_base_mut().driver_features = features;
+
+        info!(
+            "VirtioDevice: current device_features {:?}",
+            features::BlkFeature::from_bits_retain(self.virtio_base_mut().driver_features)
+        );
     }
 
     /// Get driver features by guest.
@@ -641,6 +653,7 @@ pub trait VirtioDevice: Send + AsAny {
 
     /// Set virtqueue selector.
     fn set_queue_select(&mut self, val: u16) {
+        debug!("Virtio Device set_queue_select to {}", val);
         self.virtio_base_mut().queue_select = val;
     }
 

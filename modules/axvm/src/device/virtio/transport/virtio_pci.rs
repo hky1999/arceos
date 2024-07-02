@@ -409,6 +409,7 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
     }
 
     fn deactivate_device(&self) -> bool {
+        debug!("Deactivating VirtioPciDevice [{:#x?}]...", self.dev_id);
         let mut locked_dev = self.device.lock();
         if locked_dev.device_activated() {
             if let Err(e) = locked_dev.deactivate() {
@@ -527,12 +528,26 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
         let mut locked_device = self.device.lock();
         match offset {
             COMMON_DFSELECT_REG => {
+                debug!(
+                    "WRITE COMMON_DFSELECT_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+
                 locked_device.set_hfeatures_sel(value);
             }
             COMMON_GFSELECT_REG => {
+                debug!(
+                    "WRITE COMMON_GFSELECT_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
                 locked_device.set_gfeatures_sel(value);
             }
             COMMON_GF_REG => {
+                debug!(
+                    "WRITE COMMON_GF_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+
                 if locked_device.device_status() & CONFIG_STATUS_FEATURES_OK != 0 {
                     error!("it's not allowed to set features after having been negoiated");
                     return Ok(());
@@ -555,6 +570,10 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                 }
             }
             COMMON_MSIX_REG => {
+                debug!(
+                    "WRITE COMMON_MSIX_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
                 if self.base.config.revise_msix_vector(value) {
                     locked_device.set_config_vector(value as u16);
                 } else {
@@ -563,14 +582,22 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                 locked_device.set_interrupt_status(0);
             }
             COMMON_STATUS_REG => {
+                debug!(
+                    "WRITE COMMON_STATUS_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
                 if value & CONFIG_STATUS_FEATURES_OK != 0 && value & CONFIG_STATUS_DRIVER_OK == 0 {
-                    let features = (locked_device.driver_features(1) as u64) << 32;
-                    debug!("driver_features is {:#x}", features);
+                    let features = (locked_device.driver_features(1) as u64) << 32
+                        | (locked_device.driver_features(0) as u64);
+                    debug!(
+                        "driver_features is {:?}",
+                        crate::device::virtio::features::BlkFeature::from_bits_retain(features)
+                    );
                     if !virtio_has_feature(features, VIRTIO_F_VERSION_1) {
                         error!(
                             "Device is modern only, but the driver not support VIRTIO_F_VERSION_1"
                         );
-                        return Ok(());
+                        // return Ok(());
                     }
                 }
                 if value != 0 && (locked_device.device_status() & !value) != 0 {
@@ -595,14 +622,29 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                 }
             }
             COMMON_Q_SELECT_REG => {
+                debug!(
+                    "WRITE COMMON_Q_SELECT_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
                 if value < VIRTIO_QUEUE_MAX {
                     locked_device.set_queue_select(value as u16);
                 }
             }
-            COMMON_Q_SIZE_REG => locked_device
-                .queue_config_mut(true)
-                .map(|config| config.size = value as u16)?,
+            COMMON_Q_SIZE_REG => {
+                debug!(
+                    "WRITE COMMON_Q_SIZE_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+                locked_device
+                    .queue_config_mut(true)
+                    .map(|config| config.size = value as u16)?
+            }
             COMMON_Q_ENABLE_REG => {
+                debug!(
+                    "WRITE COMMON_Q_ENABLE_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+
                 if value != 1 {
                     error!("Driver set illegal value for queue_enable {}", value);
                     return Err(HyperError::PciError(PciError::QueueEnable(value)));
@@ -612,6 +654,11 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                     .map(|config| config.ready = true)?;
             }
             COMMON_Q_MSIX_REG => {
+                debug!(
+                    "WRITE COMMON_Q_MSIX_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+
                 let val = if self.base.config.revise_msix_vector(value) {
                     value as u16
                 } else {
@@ -624,24 +671,61 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                     .queue_config_mut(need_check)
                     .map(|config| config.vector = val)?;
             }
-            COMMON_Q_DESCLO_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.desc_table = config.desc_table | (value as usize);
-            })?,
-            COMMON_Q_DESCHI_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.desc_table = config.desc_table | ((value as usize) << 32);
-            })?,
-            COMMON_Q_AVAILLO_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.avail_ring = config.avail_ring | (value as usize);
-            })?,
-            COMMON_Q_AVAILHI_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.avail_ring = config.avail_ring | ((value as usize) << 32);
-            })?,
-            COMMON_Q_USEDLO_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.used_ring = config.used_ring | (value as usize);
-            })?,
-            COMMON_Q_USEDHI_REG => locked_device.queue_config_mut(true).map(|config| {
-                config.used_ring = config.used_ring | ((value as usize) << 32);
-            })?,
+            COMMON_Q_DESCLO_REG => {
+                debug!(
+                    "WRITE COMMON_Q_DESCLO_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+                locked_device.queue_config_mut(true).map(|config| {
+                    config.desc_table = config.desc_table | (value as usize);
+                })?
+            }
+            COMMON_Q_DESCHI_REG => {
+                debug!(
+                    "WRITE COMMON_Q_DESCHI_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+
+                locked_device.queue_config_mut(true).map(|config| {
+                    config.desc_table = config.desc_table | ((value as usize) << 32);
+                })?
+            }
+            COMMON_Q_AVAILLO_REG => {
+                debug!(
+                    "WRITE COMMON_Q_AVAILLO_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+                locked_device.queue_config_mut(true).map(|config| {
+                    config.avail_ring = config.avail_ring | (value as usize);
+                })?
+            }
+            COMMON_Q_AVAILHI_REG => {
+                debug!(
+                    "WRITE COMMON_Q_AVAILHI_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+                locked_device.queue_config_mut(true).map(|config| {
+                    config.avail_ring = config.avail_ring | ((value as usize) << 32);
+                })?
+            }
+            COMMON_Q_USEDLO_REG => {
+                debug!(
+                    "WRITE COMMON_Q_USEDLO_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+                locked_device.queue_config_mut(true).map(|config| {
+                    config.used_ring = config.used_ring | (value as usize);
+                })?
+            }
+            COMMON_Q_USEDHI_REG => {
+                debug!(
+                    "WRITE COMMON_Q_USEDHI_REG: offset {:#x} value {:#x}",
+                    offset, value
+                );
+                locked_device.queue_config_mut(true).map(|config| {
+                    config.used_ring = config.used_ring | ((value as usize) << 32);
+                })?
+            }
             _ => {
                 return Err(HyperError::PciError(PciError::PciRegister(offset)));
             }
@@ -675,7 +759,7 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                 }
                 // read pci isr cfg
                 VIRTIO_PCI_CAP_ISR_OFFSET..VIRTIO_PCI_CAP_DEVICE_OFFSET => {
-                    debug!("read pci isr cfg, offset is {}", offset);
+                    debug!("read pci isr cfg, offset is {:#x}", offset);
                     let cloned_virtio_dev = cloned_virtio_pci.lock().device.clone();
                     if let Some(val) = data.get_mut(0) {
                         let device_lock = cloned_virtio_dev.lock();
@@ -687,7 +771,7 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                 }
                 // read pci device cfg
                 VIRTIO_PCI_CAP_DEVICE_OFFSET..VIRTIO_PCI_CAP_NOTIFY_OFFSET => {
-                    debug!("read pci device cfg, offset is {}", offset);
+                    debug!("read pci device cfg, offset is {:#x}", offset);
                     let cloned_virtio_dev = cloned_virtio_pci.lock().device.clone();
                     let device_offset = offset - VIRTIO_PCI_CAP_DEVICE_OFFSET as u64;
                     if let Err(e) = cloned_virtio_dev
@@ -700,7 +784,7 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                 }
                 // read pci notify cfg
                 VIRTIO_PCI_CAP_NOTIFY_OFFSET..VIRTIO_PCI_CAP_NOTIFY_END => {
-                    debug!("read pci notify cfg, offset is {}", offset);
+                    debug!("read pci notify cfg, offset is {:#x}", offset);
                     // todo: need to notify hv to get the virtio request
                 }
                 _ => {
@@ -708,6 +792,11 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                     return Err(HyperError::InValidMmioRead);
                 }
             };
+            debug!(
+                "read pci cfg at offset {:#x}, get value {:#x}",
+                offset,
+                u64::from_le_bytes(data)
+            );
             Ok(u64::from_le_bytes(data))
         };
         let cloned_virtio_pci = virtio_pci.clone();

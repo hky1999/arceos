@@ -420,155 +420,81 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
                 let is_write = ept_info.access_flags.contains(MappingFlags::WRITE);
                 let access_size =
                     get_access_size(instr.clone()).expect("Failed to get access size");
-                let (op_kind, op) = get_instr_data(instr.clone(), is_write)
-                    .expect("Failed to get instruction data");
-                if let Some(operand) = op {
-                    if is_write {
-                        let value = match op_kind {
-                            OpKind::Immediate8
-                            | OpKind::Immediate16
-                            | OpKind::Immediate32
-                            | OpKind::Immediate64 => operand.parse::<u64>().unwrap(),
-                            OpKind::Register => match operand {
-                                _ if operand.contains("a") => vcpu.regs().rax,
-                                _ if operand.contains("b") => vcpu.regs().rbx,
-                                _ if operand.contains("c") => vcpu.regs().rcx,
-                                _ if operand.contains("d") => vcpu.regs().rdx,
-                                _ if operand.contains("si") => vcpu.regs().rsi,
-                                _ if operand.contains("di") => vcpu.regs().rdi,
-                                _ if operand.contains("bp") => vcpu.regs().rbp,
-                                _ if operand.contains("r8") => vcpu.regs().r8,
-                                _ if operand.contains("r9") => vcpu.regs().r9,
-                                _ if operand.contains("r10") => vcpu.regs().r10,
-                                _ if operand.contains("r11") => vcpu.regs().r11,
-                                _ if operand.contains("r12") => vcpu.regs().r12,
-                                _ if operand.contains("r13") => vcpu.regs().r13,
-                                _ if operand.contains("r14") => vcpu.regs().r14,
-                                _ if operand.contains("r15") => vcpu.regs().r15,
-                                _ => return Err(HyperError::InvalidParam),
-                            },
-                            _ => return Err(HyperError::InvalidParam),
-                        };
-                        debug!("[handle_mmio_instruction_to_device] write value:{:#x} to fault addr:{:#x} access_size:{:#x}", value, fault_addr, access_size);
-                        let op_code = instr.op_code();
-                        match op_code.instruction_string().to_lowercase() {
-                            s if s.contains("mov") => {
-                                debug!("this is write mmio and instr: {}", s);
-                                device.lock().write(fault_addr, access_size, value)?;
-                            }
-                            _ => {
-                                error!("unrealized instruction:{:?}", op_code.instruction_string());
-                                return Err(HyperError::InstructionNotSupported);
-                            }
-                        };
-                    } else {
-                        debug!("[handle_mmio_instruction_to_device] read begin");
-                        let value = device.lock().read(fault_addr, access_size)?;
-                        debug!("[handle_mmio_instruction_to_device] read from fault addr:{:#x} value:{:#x} access_size:{:#x}", fault_addr, value, access_size);
-                        let (op_kind, op) = get_instr_data(instr.clone(), is_write)
-                            .expect("Failed to get instruction data");
-                        let op_code = instr.op_code();
-                        match op_code.instruction_string().to_lowercase() {
-                            s if s.contains("mov") => {
-                                debug!("this is read mmio and instr: {}", s);
-                                // mov instruction can only be used to write to register
-                                if op_kind != OpKind::Register {
-                                    debug!("opkind:{:?}", op_kind);
-                                    return Err(HyperError::InvalidParam);
-                                }
-                                // not consider segment register
-                                let reg = match operand {
-                                    _ if operand.contains("a") => &mut vcpu.regs_mut().rax,
-                                    _ if operand.contains("b") => &mut vcpu.regs_mut().rbx,
-                                    _ if operand.contains("c") => &mut vcpu.regs_mut().rcx,
-                                    _ if operand.contains("d") => &mut vcpu.regs_mut().rdx,
-                                    _ if operand.contains("si") => &mut vcpu.regs_mut().rsi,
-                                    _ if operand.contains("di") => &mut vcpu.regs_mut().rdi,
-                                    _ if operand.contains("bp") => &mut vcpu.regs_mut().rbp,
-                                    _ if operand.contains("r8") => &mut vcpu.regs_mut().r8,
-                                    _ if operand.contains("r9") => &mut vcpu.regs_mut().r9,
-                                    _ if operand.contains("r10") => &mut vcpu.regs_mut().r10,
-                                    _ if operand.contains("r11") => &mut vcpu.regs_mut().r11,
-                                    _ if operand.contains("r12") => &mut vcpu.regs_mut().r12,
-                                    _ if operand.contains("r13") => &mut vcpu.regs_mut().r13,
-                                    _ if operand.contains("r14") => &mut vcpu.regs_mut().r14,
-                                    _ if operand.contains("r15") => &mut vcpu.regs_mut().r15,
-                                    _ => return Err(HyperError::InvalidParam),
-                                };
-                                match access_size {
-                                    1 => *reg = (*reg & !0xff) | (value & 0xff) as u64,
-                                    2 => *reg = (*reg & !0xffff) | (value & 0xffff) as u64,
-                                    4 => {
-                                        *reg = (*reg & !0xffff_ffff) | (value & 0xffff_ffff) as u64
-                                    }
-                                    8 => *reg = value,
-                                    _ => unreachable!(),
-                                }
-                            }
-                            s if s.contains("test") => {
-                                debug!("this is read mmio and instr: {}", s);
-                                // test instruction use value from the other operand
-                                let value2 = match op_kind {
-                                    OpKind::Immediate8
-                                    | OpKind::Immediate16
-                                    | OpKind::Immediate32
-                                    | OpKind::Immediate64 => operand.parse::<u64>().unwrap(),
-                                    OpKind::Register => match operand {
-                                        _ if operand.contains("a") => vcpu.regs().rax,
-                                        _ if operand.contains("b") => vcpu.regs().rbx,
-                                        _ if operand.contains("c") => vcpu.regs().rcx,
-                                        _ if operand.contains("d") => vcpu.regs().rdx,
-                                        _ if operand.contains("si") => vcpu.regs().rsi,
-                                        _ if operand.contains("di") => vcpu.regs().rdi,
-                                        _ if operand.contains("bp") => vcpu.regs().rbp,
-                                        _ if operand.contains("r8") => vcpu.regs().r8,
-                                        _ if operand.contains("r9") => vcpu.regs().r9,
-                                        _ if operand.contains("r10") => vcpu.regs().r10,
-                                        _ if operand.contains("r11") => vcpu.regs().r11,
-                                        _ if operand.contains("r12") => vcpu.regs().r12,
-                                        _ if operand.contains("r13") => vcpu.regs().r13,
-                                        _ if operand.contains("r14") => vcpu.regs().r14,
-                                        _ if operand.contains("r15") => vcpu.regs().r15,
-                                        _ => return Err(HyperError::InvalidParam),
-                                    },
-                                    _ => return Err(HyperError::InvalidParam),
-                                };
-                                let result = match access_size {
-                                    1 => (value2 & value) & 0xff,
-                                    2 => (value2 & value) & 0xffff,
-                                    4 => (value2 & value) & 0xffff_ffff,
-                                    8 => value2 & value,
-                                    _ => unreachable!(),
-                                };
-                                /*
-                                 * OF and CF are cleared; the SF, ZF and PF flags are set
-                                 * according to the result; AF is undefined.
-                                 *
-                                 * The updated status flags are obtained by subtracting 0 from
-                                 * 'result'.
-                                 */
-                                let mut rflags = getcc(access_size, result, 0);
-                                debug!(
-                                    "value1:{:#x} value2:{:#x} rflags:{:#x}",
-                                    value, value2, rflags
-                                );
-                                // clear OF and CF
-                                rflags = rflags
-                                    & !(RFlags::OVERFLOW_FLAG.bits())
-                                    & !(RFlags::CARRY_FLAG.bits());
-                                // set mask for ZF, PF, SF, OF, CF
-                                let mask = RFlags::ZERO_FLAG.bits()
-                                    | RFlags::PARITY_FLAG.bits()
-                                    | RFlags::SIGN_FLAG.bits()
-                                    | RFlags::OVERFLOW_FLAG.bits()
-                                    | RFlags::CARRY_FLAG.bits();
-                                vcpu.set_guest_rflags(rflags as usize, mask as usize)?;
-                            }
-                            _ => {
-                                error!("unrealized instruction:{:?}", op_code.instruction_string());
-                                return Err(HyperError::InstructionNotSupported);
-                            }
-                        };
+
+                if is_write {
+                    // Handle write.
+
+                    debug!(
+                        "[handle_mmio_instruction_to_device] write instr {}",
+                        instr.clone()
+                    );
+                    let value = decode_value_from_instr(instr.clone(), vcpu)?;
+                    debug!("[handle_mmio_instruction_to_device] write value:{:#x} to fault addr:{:#x} access_size:{:#x}", value, fault_addr, access_size);
+                    match instr.op_code().instruction_string().to_lowercase() {
+                        s if s.contains("mov") => {
+                            debug!(
+                                "this is write mmio and instr: {} access_size {:#x}",
+                                s, access_size
+                            );
+                            device.lock().write(fault_addr, access_size, value)?;
+                        }
+                        _ => {
+                            error!("unrealized instruction: {}", instr);
+                            return Err(HyperError::InstructionNotSupported);
+                        }
+                    };
+                } else {
+                    // Handle read.
+
+                    debug!(
+                        "[handle_mmio_instruction_to_device] read begin instr {}",
+                        instr.clone()
+                    );
+                    let value = device.lock().read(fault_addr, access_size)?;
+                    debug!("[handle_mmio_instruction_to_device] read from fault addr:{:#x} value:{:#x} access_size:{:#x}", fault_addr, value, access_size);
+
+                    let op_code = instr.op_code();
+                    match op_code.instruction_string().to_lowercase() {
+                        s if s.contains("mov") => {
+                            emulated_instr_read(value, access_size, instr, vcpu);
+                        }
+                        s if s.contains("test") => {
+                            let value2 = decode_value_from_instr(instr.clone(), vcpu)?;
+                            let result = match access_size {
+                                1 => (value2 & value) & 0xff,
+                                2 => (value2 & value) & 0xffff,
+                                4 => (value2 & value) & 0xffff_ffff,
+                                8 => value2 & value,
+                                _ => unreachable!(),
+                            };
+                            /*
+                             * OF and CF are cleared; the SF, ZF and PF flags are set
+                             * according to the result; AF is undefined.
+                             *
+                             * The updated status flags are obtained by subtracting 0 from
+                             * 'result'.
+                             */
+                            let mut rflags = getcc(access_size, result, 0);
+                            debug!(
+                                "value1:{:#x} value2:{:#x} rflags:{:#x}",
+                                value, value2, rflags
+                            );
+                            // clear OF and CF
+                            rflags = rflags
+                                & !(RFlags::OVERFLOW_FLAG.bits())
+                                & !(RFlags::CARRY_FLAG.bits());
+                            // set mask for ZF, PF, SF, OF, CF
+                            let mask = RFlags::ZERO_FLAG.bits()
+                                | RFlags::PARITY_FLAG.bits()
+                                | RFlags::SIGN_FLAG.bits()
+                                | RFlags::OVERFLOW_FLAG.bits()
+                                | RFlags::CARRY_FLAG.bits();
+                            vcpu.set_guest_rflags(rflags as usize, mask as usize)?;
+                        }
+                        _ => {
+                            error!("unrealized instruction:{:?}", op_code.instruction_string());
+                            return Err(HyperError::InstructionNotSupported);
+                        }
                     }
                 }
                 vcpu.advance_rip(exit_info.exit_instruction_length as _)?;
@@ -592,9 +518,9 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
     ) -> Option<HyperResult> {
         match vcpu.nested_page_fault_info() {
             Ok(fault_info) => {
-                debug!(
+                warn!(
                     "VM exit: EPT violation @ {:#x}, fault_paddr={:#x}, access_flags=({:?})",
-                    exit_info.guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags, // vcpu
+                    exit_info.guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags
                 );
                 if let Some(dev) = self.find_memory_io_device(fault_info.fault_guest_paddr as u64) {
                     return Some(Self::handle_mmio_instruction_to_device(
@@ -712,6 +638,201 @@ fn get_access_size(instruction: Instruction) -> HyperResult<u8> {
 //         })
 //     }
 // }
+
+fn set_read_instr_value_of_specific_op_kind<H: HyperCraftHal>(
+    value: u64,
+    access_size: u8,
+    op_kind: OpKind,
+    reg: Register,
+    vcpu: &mut VCpu<H>,
+) -> bool {
+    if op_kind != OpKind::Register {
+        return false;
+    }
+    let gpr = match reg {
+        Register::AX | Register::RAX | Register::EAX | Register::AL | Register::AH => {
+            &mut vcpu.regs_mut().rax
+        }
+        Register::BX | Register::RBX | Register::EBX | Register::BL | Register::BH => {
+            &mut vcpu.regs_mut().rbx
+        }
+        Register::CX | Register::RCX | Register::ECX | Register::CL | Register::CH => {
+            &mut vcpu.regs_mut().rcx
+        }
+        Register::DX | Register::RDX | Register::EDX | Register::DL | Register::DH => {
+            &mut vcpu.regs_mut().rdx
+        }
+        Register::SI | Register::RSI | Register::ESI | Register::SIL => &mut vcpu.regs_mut().rsi,
+        Register::DI | Register::RDI | Register::EDI | Register::DIL => &mut vcpu.regs_mut().rdi,
+        Register::BP | Register::RBP | Register::EBP | Register::BPL => &mut vcpu.regs_mut().rbp,
+        Register::R8 | Register::R8D | Register::R8W | Register::R8L => &mut vcpu.regs_mut().r8,
+        Register::R9 | Register::R9D | Register::R9W | Register::R9L => &mut vcpu.regs_mut().r9,
+        Register::R10 | Register::R10D | Register::R10W | Register::R10L => {
+            &mut vcpu.regs_mut().r10
+        }
+        Register::R11 | Register::R11D | Register::R11W | Register::R11L => {
+            &mut vcpu.regs_mut().r11
+        }
+        Register::R12 | Register::R12D | Register::R12W | Register::R12L => {
+            &mut vcpu.regs_mut().r12
+        }
+        Register::R13 | Register::R13D | Register::R13W | Register::R13L => {
+            &mut vcpu.regs_mut().r13
+        }
+        Register::R14 | Register::R14D | Register::R14W | Register::R14L => {
+            &mut vcpu.regs_mut().r14
+        }
+        Register::R15 | Register::R15D | Register::R15W | Register::R15L => {
+            &mut vcpu.regs_mut().r15
+        }
+        _ => {
+            return false;
+        }
+    };
+    let ori = *gpr;
+    match access_size {
+        1 => *gpr = (*gpr & !0xff) | (value & 0xff) as u64,
+        2 => *gpr = (*gpr & !0xffff) | (value & 0xffff) as u64,
+        4 => *gpr = (*gpr & !0xffff_ffff) | (value & 0xffff_ffff) as u64,
+        8 => *gpr = value,
+        _ => {
+            panic!("Invalid access_size {:#x}", access_size);
+        }
+    }
+
+    debug!(
+        "emulated_instr_read value {} set {:?} from {:#x} to {:#x}",
+        value, reg, ori, *gpr
+    );
+
+    true
+}
+
+fn get_value_from_instr_of_specific_op_kind<H: HyperCraftHal>(
+    instruction: Instruction,
+    op_kind: OpKind,
+    reg: Register,
+    vcpu: &VCpu<H>,
+) -> Option<u64> {
+    match op_kind {
+        OpKind::Register => match reg {
+            Register::AX | Register::RAX | Register::EAX | Register::AL | Register::AH => {
+                Some(vcpu.regs().rax)
+            }
+            Register::BX | Register::RBX | Register::EBX | Register::BL | Register::BH => {
+                Some(vcpu.regs().rbx)
+            }
+            Register::CX | Register::RCX | Register::ECX | Register::CL | Register::CH => {
+                Some(vcpu.regs().rcx)
+            }
+            Register::DX | Register::RDX | Register::EDX | Register::DL | Register::DH => {
+                Some(vcpu.regs().rdx)
+            }
+            Register::SI | Register::RSI | Register::ESI | Register::SIL => Some(vcpu.regs().rsi),
+            Register::DI | Register::RDI | Register::EDI | Register::DIL => Some(vcpu.regs().rdi),
+            Register::BP | Register::RBP | Register::EBP | Register::BPL => Some(vcpu.regs().rbp),
+            Register::R8 | Register::R8D | Register::R8W | Register::R8L => Some(vcpu.regs().r8),
+            Register::R9 | Register::R9D | Register::R9W | Register::R9L => Some(vcpu.regs().r9),
+            Register::R10 | Register::R10D | Register::R10W | Register::R10L => {
+                Some(vcpu.regs().r10)
+            }
+            Register::R11 | Register::R11D | Register::R11W | Register::R11L => {
+                Some(vcpu.regs().r11)
+            }
+            Register::R12 | Register::R12D | Register::R12W | Register::R12L => {
+                Some(vcpu.regs().r12)
+            }
+            Register::R13 | Register::R13D | Register::R13W | Register::R13L => {
+                Some(vcpu.regs().r13)
+            }
+            Register::R14 | Register::R14D | Register::R14W | Register::R14L => {
+                Some(vcpu.regs().r14)
+            }
+            Register::R15 | Register::R15D | Register::R15W | Register::R15L => {
+                Some(vcpu.regs().r15)
+            }
+            _ => {
+                error!("Unsupported register {:?} of op kind {:?}", reg, op_kind);
+                None
+            }
+        },
+        OpKind::Immediate8 => Some(instruction.immediate8() as u64),
+        OpKind::Immediate16 => Some(instruction.immediate16() as u64),
+        OpKind::Immediate32 => Some(instruction.immediate32() as u64),
+        OpKind::Immediate64 => Some(instruction.immediate64()),
+        _ => None,
+    }
+}
+
+fn decode_value_from_instr<H: HyperCraftHal>(
+    instruction: Instruction,
+    vcpu: &VCpu<H>,
+) -> HyperResult<u64> {
+    // only support 2 operands instruction
+    if (instruction.op_count() > 2 || instruction.op_count() < 1) {
+        error!(
+            "Instruction {} can not be decoded, invalid op count {}",
+            instruction,
+            instruction.op_count()
+        );
+        return Err(HyperError::OperandNotSupported);
+    }
+
+    if let Some(value) = get_value_from_instr_of_specific_op_kind(
+        instruction,
+        instruction.op0_kind(),
+        instruction.op0_register(),
+        vcpu,
+    ) {
+        Ok(value)
+    } else if let Some(value) = get_value_from_instr_of_specific_op_kind(
+        instruction,
+        instruction.op1_kind(),
+        instruction.op1_register(),
+        vcpu,
+    ) {
+        Ok(value)
+    } else {
+        error!("Instruction {} can not be decoded", instruction);
+        Err(HyperError::OperandNotSupported)
+    }
+}
+
+fn emulated_instr_read<H: HyperCraftHal>(
+    value: u64,
+    access_size: u8,
+    instruction: Instruction,
+    vcpu: &mut VCpu<H>,
+) -> HyperResult {
+    // only support 2 operands instruction
+    if (instruction.op_count() > 2 || instruction.op_count() < 1) {
+        error!(
+            "Instruction {} can not be decoded, invalid op count {}",
+            instruction,
+            instruction.op_count()
+        );
+        return Err(HyperError::OperandNotSupported);
+    }
+
+    if set_read_instr_value_of_specific_op_kind(
+        value,
+        access_size,
+        instruction.op0_kind(),
+        instruction.op0_register(),
+        vcpu,
+    ) {
+        return Ok(());
+    } else if set_read_instr_value_of_specific_op_kind(
+        value,
+        access_size,
+        instruction.op1_kind(),
+        instruction.op1_register(),
+        vcpu,
+    ) {
+        return Ok(());
+    }
+    Err(HyperError::OperandNotSupported)
+}
 
 fn get_instr_data(
     instruction: Instruction,

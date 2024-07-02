@@ -10,37 +10,55 @@
 // NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 // See the Mulan PSL v2 for more details.
 
-use core::cmp;
-use core::mem::size_of;
 use alloc::rc::Rc;
 use alloc::sync::Arc;
+use bitflags::Flags;
+use core::cmp;
+use core::mem::size_of;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use alloc::boxed::Box;
-use alloc::string::{String,ToString};
-use alloc::format;
 
 // use anyhow::{anyhow, bail, Context, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use spin::Mutex;
 
-use hypercraft::{HyperResult as Result, HyperError};
+use hypercraft::{HyperError, HyperResult as Result};
 
+use crate::device::virtio::features::BlkFeature;
 use crate::device::virtio::{
-    check_config_space_rw, 
+    check_config_space_rw,
     // gpa_hva_iovec_map, iov_discard_back, iov_discard_front, iov_to_buf,
-    read_config_default, report_virtio_error, virtio_has_feature, Element, Queue, VirtioBase,
-    VirtioDevice, VirtioError, VirtioInterrupt, VirtioInterruptType, VIRTIO_BLK_F_DISCARD,
-    VIRTIO_BLK_F_FLUSH, VIRTIO_BLK_F_MQ, VIRTIO_BLK_F_RO, VIRTIO_BLK_F_SEG_MAX,
-    VIRTIO_BLK_F_WRITE_ZEROES, VIRTIO_BLK_ID_BYTES, VIRTIO_BLK_S_IOERR, VIRTIO_BLK_S_OK,
-    VIRTIO_BLK_S_UNSUPP, VIRTIO_BLK_T_DISCARD, VIRTIO_BLK_T_FLUSH, VIRTIO_BLK_T_GET_ID,
-    VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT, VIRTIO_BLK_T_WRITE_ZEROES,
-    VIRTIO_BLK_WRITE_ZEROES_FLAG_UNMAP, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_RING_INDIRECT_DESC,
-    VIRTIO_F_VERSION_1, VIRTIO_TYPE_BLOCK,
+    read_config_default,
+    report_virtio_error,
+    virtio_has_feature,
+    Element,
+    Queue,
+    VirtioBase,
+    VirtioDevice,
+    VirtioError,
+    VirtioInterrupt,
+    VirtioInterruptType,
+    VIRTIO_BLK_ID_BYTES,
+    VIRTIO_BLK_S_IOERR,
+    VIRTIO_BLK_S_OK,
+    VIRTIO_BLK_S_UNSUPP,
+    VIRTIO_BLK_T_DISCARD,
+    VIRTIO_BLK_T_FLUSH,
+    VIRTIO_BLK_T_GET_ID,
+    VIRTIO_BLK_T_IN,
+    VIRTIO_BLK_T_OUT,
+    VIRTIO_BLK_T_WRITE_ZEROES,
+    VIRTIO_BLK_WRITE_ZEROES_FLAG_UNMAP,
+    VIRTIO_F_RING_EVENT_IDX,
+    VIRTIO_F_RING_INDIRECT_DESC,
+    VIRTIO_F_VERSION_1,
+    VIRTIO_TYPE_BLOCK,
 };
-
 
 use crate::pci::util::byte_code::ByteCode;
 use pci::offset_of;
@@ -542,6 +560,8 @@ impl Block {
             blk_cfg,
             req_align: 1,
             buf_align: 1,
+			// Todo: generage from real Disk img file.
+            disk_sectors: 131072, // 65536 KB
             // drive_files,
             ..Default::default()
         }
@@ -574,6 +594,7 @@ impl Block {
     }
 
     fn get_blk_config_size(&self) -> usize {
+        use crate::device::virtio::{VIRTIO_BLK_F_DISCARD, VIRTIO_BLK_F_WRITE_ZEROES};
         if virtio_has_feature(self.base.device_features, VIRTIO_BLK_F_WRITE_ZEROES) {
             offset_of!(VirtioBlkConfig, unused1)
         } else if virtio_has_feature(self.base.device_features, VIRTIO_BLK_F_DISCARD) {
@@ -608,23 +629,26 @@ impl VirtioDevice for Block {
     }
 
     fn init_config_features(&mut self) -> Result<()> {
-        self.base.device_features = 1_u64 << VIRTIO_F_VERSION_1
-            | 1_u64 << VIRTIO_F_RING_INDIRECT_DESC
-            | 1_u64 << VIRTIO_F_RING_EVENT_IDX
-            | 1_u64 << VIRTIO_BLK_F_FLUSH
-            | 1_u64 << VIRTIO_BLK_F_SEG_MAX;
+        let mut device_features = BlkFeature::VERSION_1
+            .union(BlkFeature::RING_INDIRECT_DESC)
+            .union(BlkFeature::RING_EVENT_IDX)
+            .union(BlkFeature::FLUSH)
+            .union(BlkFeature::SEG_MAX);
+
         if self.blk_cfg.read_only {
-            self.base.device_features |= 1_u64 << VIRTIO_BLK_F_RO;
+            device_features.set(BlkFeature::RO, true);
         };
         if self.blk_cfg.queues > 1 {
-            self.base.device_features |= 1_u64 << VIRTIO_BLK_F_MQ;
+            device_features.set(BlkFeature::MQ, true);
         }
         if self.blk_cfg.discard {
-            self.base.device_features |= 1_u64 << VIRTIO_BLK_F_DISCARD;
+            device_features.set(BlkFeature::DISCARD, true);
         }
         if self.blk_cfg.write_zeroes != WriteZeroesState::Off {
-            self.base.device_features |= 1_u64 << VIRTIO_BLK_F_WRITE_ZEROES;
+            device_features.set(BlkFeature::WRITE_ZEROES, true);
         }
+
+        self.base.device_features = device_features.bits();
         self.build_device_config_space();
 
         Ok(())
@@ -643,20 +667,26 @@ impl VirtioDevice for Block {
         let config = &self.config_space.as_bytes()[..config_len];
         read_config_default(config, offset, data)?;
         // trace::virtio_blk_read_config(offset, data);
+
+        debug!(
+            "Virtio-Block read_config at {:#x} get date {:x?}",
+            offset, data
+        );
         Ok(())
     }
 
     fn write_config(&mut self, offset: u64, data: &[u8]) -> Result<()> {
+        debug!(
+            "Virtio-Block write_config at {:#x}, data {:x?}",
+            offset, data
+        );
         let config_len = self.get_blk_config_size();
         let config = &self.config_space.as_bytes()[..config_len];
         check_config_space_rw(config, offset, data)?;
         Ok(())
     }
 
-    fn activate(
-        &mut self,
-        interrupt_cb: Arc<VirtioInterrupt>,
-    ) -> Result<()> {
+    fn activate(&mut self, interrupt_cb: Arc<VirtioInterrupt>) -> Result<()> {
         warn!("Activate virtio-block");
         Ok(())
     }
