@@ -363,8 +363,11 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
     fn activate_device(&self) -> bool {
         let mut locked_dev = self.device.lock();
         if locked_dev.device_activated() {
+            debug!("VirtioPciDevice [{:#x?}] is activated...", self.dev_id);
             return true;
         }
+
+        debug!("Activating VirtioPciDevice [{:#x?}]", self.dev_id);
 
         let queue_type = locked_dev.queue_type();
         let features = locked_dev.virtio_base().driver_features;

@@ -5,6 +5,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use spin::Mutex;
+use spin::Once;
 use spin::RwLock;
 
 use axalloc::GlobalPage;
@@ -119,6 +120,7 @@ pub struct VMCfgEntry {
     img_cfg: VMImgCfg,
 
     memory_regions: Vec<GuestMemoryRegion>,
+    memory_set: Once<GuestPhysMemorySet>,
     /// Physical pages allocated for this VM's RAM.
     /// Todo: this should be move to VM structure.
     physical_pages: BTreeMap<usize, GlobalPage>,
@@ -149,6 +151,7 @@ impl VMCfgEntry {
                 ramdisk_load_gpa,
             ),
             memory_regions: Vec::new(),
+            memory_set: Once::new(),
             physical_pages: BTreeMap::new(),
             // memory_set: None,
         }
@@ -263,21 +266,38 @@ impl VMCfgEntry {
         Ok(())
     }
 
-    pub fn generate_guest_phys_memory_set(&self) -> Result<GuestPhysMemorySet> {
+    pub fn get_guest_phys_memory_set(&self) -> Result<GuestPhysMemorySet> {
         info!("Create VM [{}] nested page table", self.vm_id);
-        if self.vm_type == VmType::VMTHostVM {
-            return Ok(super::gpm_def::root_gpm().clone());
+        match self.memory_set.get() {
+            Some(gpm) => {
+                return Ok(gpm.clone());
+            }
+            None => {
+                let gpm = match self.vm_type {
+                    VmType::VMTHostVM => super::gpm_def::root_gpm().clone(),
+                    _ => {
+                        // create nested page table and add mapping
+                        let mut gpm = GuestPhysMemorySet::new()?;
+                        for r in &self.memory_regions {
+                            gpm.map_region(r.clone().into())?;
+                        }
+                        gpm
+                    }
+                };
+                self.memory_set.call_once(|| gpm.clone());
+
+                return Ok(gpm)
+            }
         }
 
-        // create nested page table and add mapping
-        let mut gpm = GuestPhysMemorySet::new()?;
-        for r in &self.memory_regions {
-            gpm.map_region(r.clone().into())?;
-        }
-        // let result = Arc::new(RwLock::new(gpm));
-        // self.memory_set = Some(result.clone());
-        // Ok(result)
-        Ok(gpm)
+        // if self.vm_type == VmType::VMTHostVM {
+        //     return Ok(super::gpm_def::root_gpm().clone());
+        // }
+
+        // // let result = Arc::new(RwLock::new(gpm));
+        // // self.memory_set = Some(result.clone());
+        // // Ok(result)
+        // Ok(gpm)
     }
 
     fn gpa_to_hpa_inside_ram_memory_region(&self, addr: GuestPhysAddr) -> Option<HostPhysAddr> {

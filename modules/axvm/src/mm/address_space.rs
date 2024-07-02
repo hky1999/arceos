@@ -18,8 +18,10 @@ pub struct AddressSpace {
 }
 
 impl AddressSpace {
-    pub fn new(inner: Arc<RwLock<GuestPhysMemorySet>>) -> Self {
-        AddressSpace { inner }
+    pub fn new(inner: GuestPhysMemorySet) -> Self {
+        AddressSpace {
+            inner: Arc::new(RwLock::new(inner)),
+        }
     }
 
     pub fn translate(&self, addr: GuestPhysAddr) -> Result<HostPhysAddr> {

@@ -126,7 +126,10 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
         }
     }
 
+    /// Init devices for VM according to `VMCfgEntry`.
     pub fn init(&mut self, config: Arc<VMCfgEntry>) {
+        /* Todo: Dynamically resolve devices from configuration files. */
+
         match config.get_vm_type() {
             VmType::VMTHostVM => {
                 // Since we passthrough almost all devices to Host VM now.
@@ -134,6 +137,17 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
             }
             VmType::VmTLinux | VmType::VmTNimbOS => {
                 self.init_pci_host();
+                let sys_mem = Arc::new(AddressSpace::new(
+                    config.get_guest_phys_memory_set().unwrap(),
+                ));
+                let blk = Block::new(BlkDevConfig::default());
+                self.add_virtio_pci_device(
+                    String::from("virtio_blk"),
+                    0x18,
+                    Arc::new(Mutex::new(blk)),
+                    sys_mem,
+                )
+                .unwrap();
 
                 // PIC1: 0x20, 0x20 + 2
                 self.add_port_io_device(self.pic[0].clone());
@@ -578,10 +592,10 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
     ) -> Option<HyperResult> {
         match vcpu.nested_page_fault_info() {
             Ok(fault_info) => {
-                // debug!(
-                //     "VM exit: EPT violation @ {:#x}, fault_paddr={:#x}, access_flags=({:?}), vcpu: {:#x?}",
-                //     exit_info.guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags, vcpu
-                // );
+                debug!(
+                    "VM exit: EPT violation @ {:#x}, fault_paddr={:#x}, access_flags=({:?})",
+                    exit_info.guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags, // vcpu
+                );
                 if let Some(dev) = self.find_memory_io_device(fault_info.fault_guest_paddr as u64) {
                     return Some(Self::handle_mmio_instruction_to_device(
                         vcpu, exit_info, dev, instr,
@@ -669,28 +683,28 @@ fn get_access_size(instruction: Instruction) -> HyperResult<u8> {
 // impl<H: HyperCraftHal, B: BarAllocTrait + 'static> GuestVMDevices<H, B> {
 //     pub fn new(vm_id: u32, sys_mem: Arc<AddressSpace>) -> HyperResult<Self> {
 //         let mut devices = DeviceList::new(vm_id as usize);
-        // init pci device
-        // devices.init_pci_host();
-        // devices.add_port_io_device(devices.pci_devices.clone().unwrap());
-        // This is just for test.
-        // devices.add_pci_device(String::from("pcitest"), Arc::new(AtomicU16::new(0)), 0x18)?;
+// init pci device
+// devices.init_pci_host();
+// devices.add_port_io_device(devices.pci_devices.clone().unwrap());
+// This is just for test.
+// devices.add_pci_device(String::from("pcitest"), Arc::new(AtomicU16::new(0)), 0x18)?;
 
-        // // Create a virtio dummy device
-        // let virtio_device_dummy = DummyVirtioDevice::new(VIRTIO_TYPE_BLOCK, 1, 4);
-        // devices.add_virtio_pci_device(
-        //     String::from("virtio_blk_dummy"),
-        //     0x18,
-        //     Arc::new(Mutex::new(virtio_device_dummy)),
-        //     sys_mem,
-        // )?;
+// // Create a virtio dummy device
+// let virtio_device_dummy = DummyVirtioDevice::new(VIRTIO_TYPE_BLOCK, 1, 4);
+// devices.add_virtio_pci_device(
+//     String::from("virtio_blk_dummy"),
+//     0x18,
+//     Arc::new(Mutex::new(virtio_device_dummy)),
+//     sys_mem,
+// )?;
 
-        // let blk = Block::new(BlkDevConfig::default());
-        // devices.add_virtio_pci_device(
-        //     String::from("virtio_blk"),
-        //     0x18,
-        //     Arc::new(Mutex::new(blk)),
-        //     sys_mem,
-        // )?;
+// let blk = Block::new(BlkDevConfig::default());
+// devices.add_virtio_pci_device(
+//     String::from("virtio_blk"),
+//     0x18,
+//     Arc::new(Mutex::new(blk)),
+//     sys_mem,
+// )?;
 
 //         Ok(Self {
 //             marker: PhantomData,

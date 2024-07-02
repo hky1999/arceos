@@ -133,6 +133,7 @@ impl VmInnerConst {
             // emu_devs: vec![],
             devices: DeviceList::new(vm_id),
         };
+
         this.init_devices();
         this
     }
@@ -161,7 +162,7 @@ impl VM {
             config.vm_name(),
             config.get_cpu_set()
         );
-        let mem_set = config.generate_guest_phys_memory_set().unwrap();
+        let mem_set = config.get_guest_phys_memory_set().unwrap();
 
         let this = Arc::new_cyclic(|weak| VM {
             inner_const: VmInnerConst::new(config, weak.clone()),
