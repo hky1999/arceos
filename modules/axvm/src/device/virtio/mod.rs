@@ -653,7 +653,7 @@ pub trait VirtioDevice: Send + AsAny {
 
     /// Set virtqueue selector.
     fn set_queue_select(&mut self, val: u16) {
-        debug!("Virtio Device set_queue_select to {}", val);
+        warn!("Virtio Device set_queue_select to {}", val);
         self.virtio_base_mut().queue_select = val;
     }
 

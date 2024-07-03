@@ -810,8 +810,29 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                     );
                     let common_offset = offset - VIRTIO_PCI_CAP_COMMON_OFFSET as u64;
                     let mut value = 0;
-                    if !read_data_u32(data, &mut value) {
-                        return Err(HyperError::InValidMmioWrite);
+                    if access_size == 8 {
+                        if !read_data_u32(&data[0..4], &mut value) {
+                            return Err(HyperError::InValidMmioWrite);
+                        }
+
+                        let mut value_hi = 0;
+                        if !read_data_u32(&data[4..8], &mut value_hi) {
+                            return Err(HyperError::InValidMmioWrite);
+                        }
+                        if let Err(e) = cloned_virtio_pci
+                            .lock()
+                            .write_common_config(common_offset + 4, value_hi)
+                        {
+                            error!(
+                                "Failed to write common config of virtio-pci device, error is {:?}",
+                                e,
+                            );
+                            return Err(HyperError::InValidMmioWrite);
+                        }
+                    } else {
+                        if !read_data_u32(data, &mut value) {
+                            return Err(HyperError::InValidMmioWrite);
+                        }
                     }
 
                     if let Err(e) = cloned_virtio_pci

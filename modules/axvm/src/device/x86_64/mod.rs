@@ -447,7 +447,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
                     // Handle read.
 
                     debug!(
-                        "[handle_mmio_instruction_to_device] read begin instr {}",
+                        "[handle_mmio_instruction_to_device] read begin instr \"{}\"",
                         instr.clone()
                     );
                     let value = device.lock().read(fault_addr, access_size)?;
@@ -690,6 +690,10 @@ fn set_read_instr_value_of_specific_op_kind<H: HyperCraftHal>(
         }
     };
     let ori = *gpr;
+
+    // Clear GPR.
+    *gpr = 0;
+
     match access_size {
         1 => *gpr = (*gpr & !0xff) | (value & 0xff) as u64,
         2 => *gpr = (*gpr & !0xffff) | (value & 0xffff) as u64,
