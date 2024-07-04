@@ -31,13 +31,14 @@ use pci::{
 };
 
 use crate::mm::AddressSpace;
+use crate::mm::iovec::{Iovec, mem_to_buf};
 use crate::vcpu2pcpu;
 
 pub struct VirtioMsiIrqManager {
     pub vm_id: u32,
 }
 impl MsiIrqManager for VirtioMsiIrqManager {
-    fn trigger(&self, vector: MsiVector, dev_id: u32) -> Result<()> {
+    fn trigger(&self, vector: MsiVector, dev_id: u32) -> Result {
         debug!("Trigger MSI: {:#?}", vector);
         let msi_addr_reg: MsiAddrReg = vector.msi_addr.into();
         let is_phys = msi_addr_reg.dest_mode() == MSI_ADDR_DESTMODE_PHYS;
@@ -323,7 +324,7 @@ pub enum VirtioInterruptType {
 }
 
 pub type VirtioInterrupt =
-    Box<dyn Fn(&VirtioInterruptType, Option<&Queue>, bool) -> Result<()> + Send + Sync>;
+    Box<dyn Fn(&VirtioInterruptType, Option<&Queue>, bool) -> Result + Send + Sync>;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum VirtioDeviceQuirk {
@@ -443,6 +444,7 @@ impl VirtioBase {
         state
     }
 
+    /// Used in virtio_mmio, `set_state_mut()`.
     fn set_state(
         &mut self,
         state: &VirtioBaseState,
@@ -496,10 +498,10 @@ pub trait VirtioDevice: Send + AsAny {
     fn virtio_base_mut(&mut self) -> &mut VirtioBase;
 
     /// Realize low level device.
-    fn realize(&mut self) -> Result<()>;
+    fn realize(&mut self) -> Result;
 
     /// Unrealize low level device.
-    fn unrealize(&mut self) -> Result<()> {
+    fn unrealize(&mut self) -> Result {
         error!("Unrealize of the virtio device is not implemented");
         Err(HyperError::BadState)
     }
@@ -520,7 +522,7 @@ pub trait VirtioDevice: Send + AsAny {
     }
 
     /// Init device configure space and features.
-    fn init_config_features(&mut self) -> Result<()>;
+    fn init_config_features(&mut self) -> Result;
 
     /// Get device features from host.
     /// Initiated in `init_config_features()`.
@@ -699,10 +701,10 @@ pub trait VirtioDevice: Send + AsAny {
     }
 
     /// Read data of config from guest.
-    fn read_config(&self, offset: u64, data: &mut [u8]) -> Result<()>;
+    fn read_config(&self, offset: u64, data: &mut [u8]) -> Result;
 
     /// Write data to config from guest.
-    fn write_config(&mut self, offset: u64, data: &[u8]) -> Result<()>;
+    fn write_config(&mut self, offset: u64, data: &[u8]) -> Result;
 
     /// Activate the virtio device, this function is called by vcpu thread when frontend
     /// virtio driver is ready and write `DRIVER_OK` to backend.
@@ -711,13 +713,15 @@ pub trait VirtioDevice: Send + AsAny {
     ///
     /// * `mem_space` - System mem.
     /// * `interrupt_cb` - The callback used to send interrupt to guest.
-    /// * `queues` - The virtio queues.
-    /// * `queue_evts` - The notifier events from guest.
-    fn activate(&mut self, interrupt_cb: Arc<VirtioInterrupt>) -> Result<()>;
+    fn activate(
+        &mut self,
+        mem_space: Arc<AddressSpace>,
+        interrupt_cb: Arc<VirtioInterrupt>,
+    ) -> Result;
 
     /// Deactivate virtio device, this function remove event fd
     /// of device out of the event loop.
-    fn deactivate(&mut self) -> Result<()> {
+    fn deactivate(&mut self) -> Result {
         error!(
             "Reset this device is not supported, virtio dev type is {}",
             self.device_type()
@@ -727,7 +731,7 @@ pub trait VirtioDevice: Send + AsAny {
 
     /// Reset virtio device, used to do some special reset action for
     /// different device.
-    fn reset(&mut self) -> Result<()> {
+    fn reset(&mut self) -> Result {
         Ok(())
     }
 
@@ -737,7 +741,7 @@ pub trait VirtioDevice: Send + AsAny {
     /// # Arguments
     ///
     /// * `_file_path` - The related backend file path.
-    fn update_config(&mut self) -> Result<()> {
+    fn update_config(&mut self) -> Result {
         error!("Unsupported to update configuration");
         Err(HyperError::BadState)
     }
@@ -747,10 +751,15 @@ pub trait VirtioDevice: Send + AsAny {
     fn has_control_queue(&self) -> bool {
         false
     }
+
+    fn notify_handler(&mut self, val: u16) -> Result {
+        error!("VirtioDevice notify handler unimplemented");
+        Err(HyperError::BadState)
+    }
 }
 
 /// Check boundary for config space rw.
-fn check_config_space_rw(config: &[u8], offset: u64, data: &[u8]) -> Result<()> {
+fn check_config_space_rw(config: &[u8], offset: u64, data: &[u8]) -> Result {
     let config_len = config.len() as u64;
     let data_len = data.len() as u64;
     offset
@@ -763,7 +772,7 @@ fn check_config_space_rw(config: &[u8], offset: u64, data: &[u8]) -> Result<()> 
 }
 
 /// Default implementation for config space read.
-fn read_config_default(config: &[u8], offset: u64, mut data: &mut [u8]) -> Result<()> {
+fn read_config_default(config: &[u8], offset: u64, mut data: &mut [u8]) -> Result {
     check_config_space_rw(config, offset, data)?;
     let read_end = offset as usize + data.len();
     data.copy_from_slice(&config[offset as usize..read_end]);
@@ -788,65 +797,65 @@ pub fn report_virtio_error(
     broken.store(true, Ordering::SeqCst);
 }
 
-// /// Read iovec to buf and return the read number of bytes.
-// pub fn iov_to_buf(mem_space: &AddressSpace, iovec: &[ElemIovec], buf: &mut [u8]) -> Result<usize> {
-//     let mut start: usize = 0;
-//     let mut end: usize = 0;
+/// Read iovec to buf and return the read number of bytes.
+pub fn iov_to_buf(mem_space: &AddressSpace, iovec: &[ElemIovec], buf: &mut [u8]) -> Result<usize> {
+    let mut start: usize = 0;
+    let mut end: usize = 0;
 
-//     for iov in iovec {
-//         let addr_map = mem_space.get_address_map(iov.addr, iov.len as u64)?;
-//         for addr in addr_map.into_iter() {
-//             end = cmp::min(start + addr.iov_len as usize, buf.len());
-//             mem_to_buf(&mut buf[start..end], addr.iov_base)?;
-//             if end >= buf.len() {
-//                 return Ok(end);
-//             }
-//             start = end;
-//         }
-//     }
-//     Ok(end)
-// }
+    for iov in iovec {
+        let mut addr_map = Vec::new();
+        mem_space.get_address_map(iov.addr, iov.len as u64, &mut addr_map)?;
+        for addr in addr_map.into_iter() {
+            end = cmp::min(start + addr.iov_len as usize, buf.len());
+            mem_to_buf(&mut buf[start..end], addr.iov_base)?;
+            if end >= buf.len() {
+                return Ok(end);
+            }
+            start = end;
+        }
+    }
+    Ok(end)
+}
 
-// /// Discard "size" bytes of the front of iovec.
-// pub fn iov_discard_front(iovec: &mut [ElemIovec], mut size: u64) -> Option<&mut [ElemIovec]> {
-//     for (index, iov) in iovec.iter_mut().enumerate() {
-//         if iov.len as u64 > size {
-//             iov.addr.0 += size;
-//             iov.len -= size as u32;
-//             return Some(&mut iovec[index..]);
-//         }
-//         size -= iov.len as u64;
-//     }
-//     None
-// }
+/// Discard "size" bytes of the front of iovec.
+pub fn iov_discard_front(iovec: &mut [ElemIovec], mut size: u64) -> Option<&mut [ElemIovec]> {
+    for (index, iov) in iovec.iter_mut().enumerate() {
+        if iov.len as u64 > size {
+            iov.addr += size as usize;
+            iov.len -= size as u32;
+            return Some(&mut iovec[index..]);
+        }
+        size -= iov.len as u64;
+    }
+    None
+}
 
-// /// Discard "size" bytes of the back of iovec.
-// pub fn iov_discard_back(iovec: &mut [ElemIovec], mut size: u64) -> Option<&mut [ElemIovec]> {
-//     let len = iovec.len();
-//     for (index, iov) in iovec.iter_mut().rev().enumerate() {
-//         if iov.len as u64 > size {
-//             iov.len -= size as u32;
-//             return Some(&mut iovec[..(len - index)]);
-//         }
-//         size -= iov.len as u64;
-//     }
-//     None
-// }
+/// Discard "size" bytes of the back of iovec.
+pub fn iov_discard_back(iovec: &mut [ElemIovec], mut size: u64) -> Option<&mut [ElemIovec]> {
+    let len = iovec.len();
+    for (index, iov) in iovec.iter_mut().rev().enumerate() {
+        if iov.len as u64 > size {
+            iov.len -= size as u32;
+            return Some(&mut iovec[..(len - index)]);
+        }
+        size -= iov.len as u64;
+    }
+    None
+}
 
-// /// Convert GPA buffer iovec to HVA buffer iovec.
-// /// If don't need the entire iovec, use iov_discard_front/iov_discard_back firstly.
-// fn gpa_hva_iovec_map(
-//     gpa_elemiovec: &[ElemIovec],
-//     mem_space: &AddressSpace,
-// ) -> Result<(u64, Vec<Iovec>)> {
-//     let mut iov_size = 0;
-//     let mut hva_iovec = Vec::new();
+/// Convert GPA buffer iovec to HVA buffer iovec.
+/// If don't need the entire iovec, use iov_discard_front/iov_discard_back firstly.
+fn gpa_hva_iovec_map(
+    gpa_elemiovec: &[ElemIovec],
+    mem_space: &AddressSpace,
+) -> Result<(u64, Vec<Iovec>)> {
+    let mut iov_size = 0;
+    let mut hva_iovec = Vec::with_capacity(gpa_elemiovec.len());
 
-//     for elem in gpa_elemiovec.iter() {
-//         let mut hva_vec = mem_space.get_address_map(elem.addr, elem.len as u64)?;
-//         hva_iovec.append(&mut hva_vec);
-//         iov_size += elem.len as u64;
-//     }
+    for elem in gpa_elemiovec.iter() {
+        mem_space.get_address_map(elem.addr, elem.len as u64, &mut hva_iovec)?;
+        iov_size += elem.len as u64;
+    }
 
-//     Ok((iov_size, hva_iovec))
-// }
+    Ok((iov_size, hva_iovec))
+}

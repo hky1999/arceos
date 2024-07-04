@@ -5,6 +5,7 @@ use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::any::Any;
+use core::borrow::Borrow;
 use core::cmp::{max, min};
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU16, Ordering};
@@ -36,7 +37,7 @@ use pci::config::{
 use pci::offset_of;
 use pci::util::{
     byte_code::ByteCode,
-    num_ops::{ranges_overlap, read_data_u32, write_data_u32, write_data_u64},
+    num_ops::{ranges_overlap, read_data_u16, read_data_u32, write_data_u32, write_data_u64},
 };
 use pci::{
     config::{PciConfig, PCI_CAP_ID_VNDR, PCI_CAP_VNDR_AND_NEXT_SIZE},
@@ -363,11 +364,15 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
     fn activate_device(&self) -> bool {
         let mut locked_dev = self.device.lock();
         if locked_dev.device_activated() {
-            debug!("VirtioPciDevice [{:#x?}] is activated...", self.dev_id);
+            warn!("VirtioPciDevice [{:#x?}] is activated...", self.dev_id);
             return true;
         }
 
-        debug!("Activating VirtioPciDevice [{:#x?}]", self.dev_id);
+        info!(
+            "Activating VirtioPciDevice [{:#x?}] {}",
+            self.dev_id,
+            self.name()
+        );
 
         let queue_type = locked_dev.queue_type();
         let features = locked_dev.virtio_base().driver_features;
@@ -399,7 +404,9 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
         let parent = self.base.parent_bus.upgrade().unwrap();
         parent.lock().update_dev_id(self.base.devfn, &self.dev_id);
 
-        if let Err(e) = locked_dev.activate(self.interrupt_cb.clone().unwrap()) {
+        if let Err(e) =
+            locked_dev.activate(self.sys_mem.clone(), self.interrupt_cb.clone().unwrap())
+        {
             error!("Failed to activate device, error is {:?}", e);
             return false;
         }
@@ -649,6 +656,12 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                     error!("Driver set illegal value for queue_enable {}", value);
                     return Err(HyperError::PciError(PciError::QueueEnable(value)));
                 }
+
+                info!(
+                    "VirtioPciDevice queue {} is ready!",
+                    locked_device.queue_select()
+                );
+
                 locked_device
                     .queue_config_mut(true)
                     .map(|config| config.ready = true)?;
@@ -876,6 +889,20 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
                         data, offset
                     );
                     // todo: need to notify hv to get the virtio request
+                    let mut value = 0;
+                    if data.len() != 2 || !read_data_u16(data, &mut value) {
+                        return Err(HyperError::InValidMmioWrite);
+                    }
+                    let queue_num = (offset as u32 - VIRTIO_PCI_CAP_NOTIFY_OFFSET)
+                        / VIRTIO_PCI_CAP_NOTIFY_OFF_MULTIPLIER;
+
+                    if value as u32 != queue_num {
+                        warn!("VirtioPciDevice illegal write to notify region, value {:#x}, offset {:#x}", value,  offset as u32 - VIRTIO_PCI_CAP_NOTIFY_OFFSET);
+                    }
+
+                    let cloned_virtio_dev = cloned_virtio_pci.lock().device.clone();
+                    cloned_virtio_dev.lock().notify_handler(value);
+                    // cloned_virtio_dev.lock().
                 }
                 _ => {
                     error!("Invalid offset for pci cfg cap, offset is {:#x}", offset);

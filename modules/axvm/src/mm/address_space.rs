@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use spin::RwLock;
 
 use axhal::mem::phys_to_virt;
@@ -8,6 +9,7 @@ use hypercraft::{
     GuestPhysAddr, HostPhysAddr, HostVirtAddr, HyperError, HyperResult as Result, VirtioError,
 };
 
+use crate::mm::iovec::Iovec;
 use crate::mm::GuestPhysMemorySet;
 
 /// A wrapper of GuestPhysMemorySet.
@@ -126,14 +128,67 @@ impl AddressSpace {
         let buf = obj.as_bytes();
         self.write_to_guest(addr, buf)
     }
+
+    /// Convert GPA buffer iovec to HVA buffer iovec.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - Guest address.
+    /// * `count` - Memory needed length
+    pub fn get_address_map(
+        &self,
+        addr: GuestPhysAddr,
+        count: u64,
+        res: &mut Vec<Iovec>,
+    ) -> Result<()> {
+        let mut len = count;
+        let mut start = addr as u64;
+
+        loop {
+            let io_vec = self
+                .translate_and_get_limit(addr)
+                .map(|(hva, region_len)| Iovec {
+                    iov_base: hva as u64,
+                    iov_len: core::cmp::min(len, region_len as u64),
+                })?;
+
+            start += io_vec.iov_len;
+            len -= io_vec.iov_len;
+            res.push(io_vec);
+
+            if len == 0 {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn get_region_cache(&self, addr: GuestPhysAddr) -> Option<TranslatedRegion> {
+        let guest_region = self.inner.read().lookup_region(addr);
+
+        match self.inner.read().lookup_region(addr) {
+            Ok(guest_region) => Some(TranslatedRegion {
+                hva_base: self.translate(guest_region.hpa).expect("Failed to perform translating in get_region_cache"),
+                gpa_start: guest_region.gpa,
+                gpa_end: guest_region.gpa + guest_region.size,
+            }),
+            Err(e) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct RegionCache; // just a stub for now
+pub struct TranslatedRegion {
+    // pub reg_type: RegionType,
+    pub hva_base: HostVirtAddr,
+    pub gpa_start: GuestPhysAddr,
+    pub gpa_end: GuestPhysAddr,
+}
 
-impl RegionCache {
-    pub fn out_of_range(&self, addr: usize) -> bool {
-        false
+impl TranslatedRegion {
+    pub fn out_of_range(&self, addr: GuestPhysAddr) -> bool {
+        addr < self.gpa_start && addr >= self.gpa_end
     }
 }
 

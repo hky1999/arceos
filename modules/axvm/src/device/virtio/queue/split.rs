@@ -24,39 +24,36 @@ use std::sync::Arc;
 use alloc::fmt::format;
 use alloc::format;
 use alloc::sync::{Arc, Weak};
+use core::cmp::{max, min};
 use core::mem::size_of;
 use core::num::Wrapping;
-use core::cmp::{max, min};
 use core::ops::{Deref, DerefMut};
-use core::sync::atomic::{fence, Ordering, AtomicBool};
+use core::sync::atomic::{fence, AtomicBool, Ordering};
 
 //use core::sync::atomic::{AtomicU16, };
 
-use crate::mm::{AddressSpace, RegionCache, RegionType};
+use crate::mm::{AddressSpace, TranslatedRegion};
 
 use log::{error, warn};
 
 use super::{
-    ElemIovec, Element, VringOps, INVALID_VECTOR_NUM, VIRTQ_DESC_F_INDIRECT,
-    VIRTQ_DESC_F_NEXT, VIRTQ_DESC_F_WRITE,
+    ElemIovec, Element, VringOps, INVALID_VECTOR_NUM, VIRTQ_DESC_F_INDIRECT, VIRTQ_DESC_F_NEXT,
+    VIRTQ_DESC_F_WRITE,
 };
 
 ///use crate::error::VirtioError;
-
 /*use crate::{
     report_virtio_error, virtio_has_feature, VirtioError, VirtioInterrupt, VIRTIO_F_RING_EVENT_IDX,
 };
 */
-
-use hypercraft::{GuestPhysAddr, HostVirtAddr, HyperError, HyperResult, MmioOps, PciError, PioOps, RegionOps, VirtioError};
+use hypercraft::{
+    GuestPhysAddr, HostVirtAddr, HyperError, HyperResult, MmioOps, PciError, PioOps, RegionOps,
+    VirtioError,
+};
 
 use crate::device::virtio::{
     report_virtio_error, virtio_has_feature, VirtioInterrupt, VIRTIO_F_RING_EVENT_IDX,
 };
-
-
-//use address_space::{AddressSpace, GuestAddress, RegionCache, RegionType};
-// use crate::mm::{AddressSpace, RegionCache, RegionType};
 
 use pci::util::byte_code::ByteCode;
 
@@ -190,9 +187,14 @@ impl QueueConfig {
                     report_virtio_error(interrupt_cb.clone(), features, broken);
                     0
                 } else {
+                    debug!("Queue desc_table_host at {:#x}", addr);
                     addr
                 }
             } else {
+                error!(
+                    "Failed to get hva of desc_table at gva {:#x}",
+                    self.desc_table,
+                );
                 0
             };
 
@@ -202,9 +204,14 @@ impl QueueConfig {
                     report_virtio_error(interrupt_cb.clone(), features, broken);
                     0
                 } else {
+                    debug!("Queue avail_ring_host at {:#x}", addr);
                     addr
                 }
             } else {
+                error!(
+                    "Failed to get hva of avail_ring at gva {:#x}",
+                    self.avail_ring,
+                );
                 0
             };
 
@@ -214,9 +221,14 @@ impl QueueConfig {
                     report_virtio_error(interrupt_cb.clone(), features, broken);
                     0
                 } else {
+                    debug!("Queue used_ring_host at {:#x}", addr);
                     addr
                 }
             } else {
+                error!(
+                    "Failed to get hva of used_ring at gva {:#x}",
+                    self.used_ring,
+                );
                 0
             };
     }
@@ -283,10 +295,12 @@ impl SplitVringDesc {
         desc_table_host: HostVirtAddr,
         queue_size: u16,
         index: u16,
-        cache: &mut Option<RegionCache>,
+        cache: &mut Option<TranslatedRegion>,
     ) -> HyperResult<Self> {
         if index >= queue_size {
-            return Err(HyperError::VirtioError(VirtioError::QueueIndex(index, queue_size)));
+            return Err(HyperError::VirtioError(VirtioError::QueueIndex(
+                index, queue_size,
+            )));
         }
 
         let desc_addr = desc_table_host
@@ -298,7 +312,9 @@ impl SplitVringDesc {
             )))?;
         let desc = sys_mem
             .read_object_from_host_virt::<SplitVringDesc>(desc_addr)
-            .map_err(|_| HyperError::VirtioError(VirtioError::ReadObjectErr("a descriptor", desc_addr)))?;
+            .map_err(|_| {
+                HyperError::VirtioError(VirtioError::ReadObjectErr("a descriptor", desc_addr))
+            })?;
 
         if desc.is_valid(sys_mem, queue_size, cache) {
             Ok(desc)
@@ -312,7 +328,7 @@ impl SplitVringDesc {
         &self,
         sys_mem: &AddressSpace,
         queue_size: u16,
-        cache: &mut Option<RegionCache>,
+        cache: &mut Option<TranslatedRegion>,
     ) -> bool {
         if self.len == 0 {
             error!("Zero sized buffers are not allowed");
@@ -333,15 +349,12 @@ impl SplitVringDesc {
                 miss_cached = false;
             }
         } else {
-            // TODO: add a `TranslatedRegion` in AddressSpace to replace the `RegionCache`.
-            /*
             let gotten_cache = sys_mem.get_region_cache(self.addr);
             if let Some(obtained_cache) = gotten_cache {
-                if obtained_cache.reg_type == RegionType::Ram {
-                    *cache = gotten_cache;
-                }
-            } 
-            */
+                // Todo: checked RegionType
+                // if obtained_cache.reg_type == RegionType::Ram
+                *cache = gotten_cache;
+            }
         }
 
         if miss_cached {
@@ -373,10 +386,10 @@ impl SplitVringDesc {
         desc_table_host: HostVirtAddr,
         queue_size: u16,
         index: u16,
-        cache: &mut Option<RegionCache>,
+        cache: &mut Option<TranslatedRegion>,
     ) -> HyperResult<SplitVringDesc> {
         SplitVringDesc::new(sys_mem, desc_table_host, queue_size, index, cache)
-            // .with_context(|| format!("Failed to find next descriptor {}", index))
+        // .with_context(|| format!("Failed to find next descriptor {}", index))
     }
 
     /// Check whether this descriptor is write-only or read-only.
@@ -416,7 +429,7 @@ impl SplitVringDesc {
     fn get_element(
         sys_mem: &AddressSpace,
         desc_info: &DescInfo,
-        cache: &mut Option<RegionCache>,
+        cache: &mut Option<TranslatedRegion>,
         elem: &mut Element,
     ) -> HyperResult<()> {
         let mut desc_table_host = desc_info.table_host;
@@ -454,7 +467,7 @@ impl SplitVringDesc {
                     .desc_num
                     .checked_add(queue_size)
                     .ok_or(HyperError::VirtioError(VirtioError::QueueDescInvalid))?;
-                    // .with_context(|| "The chained desc number overflows")?;
+                // .with_context(|| "The chained desc number overflows")?;
                 continue;
             }
 
@@ -496,7 +509,7 @@ impl ByteCode for SplitVringDesc {}
 #[derive(Default, Clone, Copy)]
 pub struct SplitVring {
     /// Region cache information.
-    cache: Option<RegionCache>,
+    cache: Option<TranslatedRegion>,
     /// The configuration of virtqueue.
     queue_config: QueueConfig,
 }
@@ -536,7 +549,12 @@ impl SplitVring {
     fn get_avail_flags_idx(&self, sys_mem: &AddressSpace) -> HyperResult<SplitVringFlagsIdx> {
         sys_mem
             .read_object_from_host_virt::<SplitVringFlagsIdx>(self.addr_cache.avail_ring_host)
-            .map_err(|_| HyperError::VirtioError(VirtioError::ReadObjectErr("avail flags idx", self.avail_ring)))
+            .map_err(|_| {
+                HyperError::VirtioError(VirtioError::ReadObjectErr(
+                    "avail flags idx",
+                    self.avail_ring,
+                ))
+            })
     }
 
     /// Get the idx of the available ring from guest memory.
@@ -557,7 +575,12 @@ impl SplitVring {
         fence(Ordering::SeqCst);
         sys_mem
             .read_object_from_host_virt::<SplitVringFlagsIdx>(self.addr_cache.used_ring_host)
-            .map_err(|_| HyperError::VirtioError(VirtioError::ReadObjectErr("used flags idx", self.used_ring)))
+            .map_err(|_| {
+                HyperError::VirtioError(VirtioError::ReadObjectErr(
+                    "used flags idx",
+                    self.used_ring,
+                ))
+            })
     }
 
     /// Get the index of the used ring from guest memory.
@@ -575,16 +598,18 @@ impl SplitVring {
         } else {
             flags_idx.flags &= !VRING_USED_F_NO_NOTIFY;
         }
-        sys_mem
-            .write_object_to_host_virt::<SplitVringFlagsIdx>(self.addr_cache.used_ring_host, &flags_idx)?;
-            /*
-            .with_context(|| {
-                format!(
-                    "Failed to set used flags, used_ring: 0x{:X}",
-                    self.used_ring
-                )
-            })?;
-             */
+        sys_mem.write_object_to_host_virt::<SplitVringFlagsIdx>(
+            self.addr_cache.used_ring_host,
+            &flags_idx,
+        )?;
+        /*
+        .with_context(|| {
+            format!(
+                "Failed to set used flags, used_ring: 0x{:X}",
+                self.used_ring
+            )
+        })?;
+         */
         // Make sure the data has been set.
         fence(Ordering::SeqCst);
         Ok(())
@@ -596,20 +621,19 @@ impl SplitVring {
         let avail_event_offset =
             VRING_FLAGS_AND_IDX_LEN + USEDELEM_LEN * (self.actual_size() as usize);
 
-        sys_mem
-            .write_object_to_host_virt(
-                self.addr_cache.used_ring_host + avail_event_offset,
-                &event_idx,
-            )?;
-            /*
-            .with_context(|| {
-                format!(
-                    "Failed to set avail event idx, used_ring: 0x{:X}, offset: {}",
-                    self.used_ring,
-                    avail_event_offset,
-                )
-            })?;
-             */
+        sys_mem.write_object_to_host_virt(
+            self.addr_cache.used_ring_host + avail_event_offset,
+            &event_idx,
+        )?;
+        /*
+        .with_context(|| {
+            format!(
+                "Failed to set avail event idx, used_ring: 0x{:X}, offset: {}",
+                self.used_ring,
+                avail_event_offset,
+            )
+        })?;
+         */
         // Make sure the data has been set.
         fence(Ordering::SeqCst);
         Ok(())
@@ -624,9 +648,8 @@ impl SplitVring {
         // The GPA of avail_ring_host with avail table length has been checked in
         // is_invalid_memory which must not be overflowed.
         let used_event_addr = self.addr_cache.avail_ring_host + used_event_offset;
-        let used_event = sys_mem
-            .read_object_from_host_virt::<u16>(used_event_addr)?;
-            // .with_context(|| VirtioError::ReadObjectErr("used event id", used_event_addr))?;
+        let used_event = sys_mem.read_object_from_host_virt::<u16>(used_event_addr)?;
+        // .with_context(|| VirtioError::ReadObjectErr("used event id", used_event_addr))?;
 
         Ok(used_event)
     }
@@ -670,7 +693,12 @@ impl SplitVring {
         !valid || (new - used_event_idx - Wrapping(1)) < (new - old)
     }
 
-    fn is_overlap(start1: GuestPhysAddr, end1: GuestPhysAddr, start2: GuestPhysAddr, end2: GuestPhysAddr) -> bool {
+    fn is_overlap(
+        start1: GuestPhysAddr,
+        end1: GuestPhysAddr,
+        start2: GuestPhysAddr,
+        end2: GuestPhysAddr,
+    ) -> bool {
         !(start1 >= end2 || start2 >= end1)
     }
 
@@ -690,7 +718,7 @@ impl SplitVring {
             };
 
         let desc_avail_end = match sys_mem.checked_offset_address(
-            self.avail_ring, 
+            self.avail_ring,
             VRING_AVAIL_LEN_EXCEPT_AVAILELEM + AVAILELEM_LEN * actual_size,
         ) {
             Ok(addr) => addr,
@@ -743,22 +771,13 @@ impl SplitVring {
         }
 
         if self.desc_table & 0xf != 0 {
-            error!(
-                "descriptor table: 0x{:X} is not aligned",
-                self.desc_table
-            );
+            error!("descriptor table: 0x{:X} is not aligned", self.desc_table);
             true
         } else if self.avail_ring & 0x1 != 0 {
-            error!(
-                "avail ring: 0x{:X} is not aligned",
-                self.avail_ring
-            );
+            error!("avail ring: 0x{:X} is not aligned", self.avail_ring);
             true
         } else if self.used_ring & 0x3 != 0 {
-            error!(
-                "used ring: 0x{:X} is not aligned",
-                self.used_ring
-            );
+            error!("used ring: 0x{:X} is not aligned", self.used_ring);
             true
         } else {
             false
@@ -771,14 +790,19 @@ impl SplitVring {
         next_avail: Wrapping<u16>,
         features: u64,
     ) -> HyperResult<DescInfo> {
-        let index_offset =
-            VRING_FLAGS_AND_IDX_LEN + AVAILELEM_LEN * ((next_avail.0 % self.actual_size()) as usize);
+        let index_offset = VRING_FLAGS_AND_IDX_LEN
+            + AVAILELEM_LEN * ((next_avail.0 % self.actual_size()) as usize);
         // The GPA of avail_ring_host with avail table length has been checked in
         // is_invalid_memory which must not be overflowed.
         let desc_index_addr = self.addr_cache.avail_ring_host + index_offset;
         let desc_index = sys_mem
             .read_object_from_host_virt::<u16>(desc_index_addr)
-            .map_err(|_| HyperError::VirtioError(VirtioError::ReadObjectErr("the index of descriptor", desc_index_addr)))?;
+            .map_err(|_| {
+                HyperError::VirtioError(VirtioError::ReadObjectErr(
+                    "the index of descriptor",
+                    desc_index_addr,
+                ))
+            })?;
 
         let desc = SplitVringDesc::new(
             sys_mem,
@@ -791,7 +815,7 @@ impl SplitVring {
         // Suppress queue notification related to current processing desc chain.
         if virtio_has_feature(features, VIRTIO_F_RING_EVENT_IDX) {
             self.set_avail_event(sys_mem, (next_avail + Wrapping(1)).0)?;
-                // .with_context(|| "Failed to set avail event for popping avail ring")?;
+            // .with_context(|| "Failed to set avail event for popping avail ring")?;
         }
 
         Ok(DescInfo {
@@ -859,7 +883,7 @@ impl VringOps for SplitVring {
         fence(Ordering::Acquire);
 
         self.get_vring_element(sys_mem, features, &mut element)?;
-            // .with_context(|| "Failed to get vring element")?;
+        // .with_context(|| "Failed to get vring element")?;
 
         /*
             trace::virtqueue_pop_avail(
@@ -878,7 +902,9 @@ impl VringOps for SplitVring {
 
     fn add_used(&mut self, sys_mem: &AddressSpace, index: u16, len: u32) -> HyperResult<()> {
         if index >= self.size {
-            return Err(HyperError::VirtioError(VirtioError::QueueIndex(index, self.size)));
+            return Err(HyperError::VirtioError(VirtioError::QueueIndex(
+                index, self.size,
+            )));
         }
 
         let next_used = (self.next_used.0 % self.actual_size()) as usize;
@@ -889,19 +915,17 @@ impl VringOps for SplitVring {
             id: u32::from(index),
             len,
         };
-        sys_mem
-            .write_object_to_host_virt::<UsedElem>(used_elem_addr, &used_elem)?;
-            // .with_context(|| "Failed to write object for used element")?;
+        sys_mem.write_object_to_host_virt::<UsedElem>(used_elem_addr, &used_elem)?;
+        // .with_context(|| "Failed to write object for used element")?;
         // Make sure used element is filled before updating used idx.
         fence(Ordering::Release);
 
         self.next_used += Wrapping(1);
-        sys_mem
-            .write_object_to_host_virt(
-                self.addr_cache.used_ring_host + VRING_IDX_POSITION,
-                &(self.next_used.0),
-            )?;
-            // .with_context(|| "Failed to write next used idx")?;
+        sys_mem.write_object_to_host_virt(
+            self.addr_cache.used_ring_host + VRING_IDX_POSITION,
+            &(self.next_used.0),
+        )?;
+        // .with_context(|| "Failed to write next used idx")?;
         // Make sure used index is exposed before notifying guest.
         fence(Ordering::SeqCst);
 
@@ -959,7 +983,7 @@ impl VringOps for SplitVring {
         SplitVring::get_used_idx(self, sys_mem)
     }
 
-    fn get_cache(&self) -> &Option<RegionCache> {
+    fn get_cache(&self) -> &Option<TranslatedRegion> {
         &self.cache
     }
 

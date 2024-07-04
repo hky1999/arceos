@@ -6,7 +6,7 @@ use alloc::format;
 use alloc::vec::Vec;
 use hypercraft::{GuestPhysAddr, HyperError, HyperResult as Result, VirtioError};
 
-use crate::mm::{AddressSpace, RegionCache};
+use crate::mm::{AddressSpace, TranslatedRegion};
 
 /// Default virtqueue size for virtio devices excepts virtio-fs.
 pub const DEFAULT_VIRTQUEUE_SIZE: u16 = 256;
@@ -140,7 +140,7 @@ pub trait VringOps {
     fn get_used_idx(&self, sys_mem: &AddressSpace) -> Result<u16>;
 
     /// Get the region cache information of the SplitVring.
-    fn get_cache(&self) -> &Option<RegionCache>;
+    fn get_cache(&self) -> &Option<TranslatedRegion>;
 
     /// Get the available bytes of the vring to read from or write to the guest
     fn get_avail_bytes(
@@ -190,5 +190,9 @@ impl Queue {
     /// * `sys_mem` - Address space to which the vring belongs.
     pub fn is_valid(&self, sys_mem: &AddressSpace) -> bool {
         self.vring.is_valid(sys_mem)
+    }
+
+    pub fn queue_notify_handler(&self) {
+
     }
 }

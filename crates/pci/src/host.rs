@@ -74,15 +74,12 @@ impl<B: BarAllocTrait> PioOps for PciHost<B> {
     }
 
     fn read(&mut self, port: u16, access_size: u8) -> HyperResult<u32> {
-        // debug!(
-        //     "this is pci host read port:{:#x} access_size:{}",
-        //     port, access_size
-        // );
+        // debug!("PciHost read port:{:#x} access_size:{}", port, access_size);
         let mut data = [0xffu8; 4]; // max access size is 4
         let cloned_hb = self.clone();
         if PCI_CFG_ADDR_PORT.contains(&port) {
             // Read configuration address register.
-            if port==0xcf8 && self.check_type1==2 {
+            if port == 0xcf8 && self.check_type1 == 2 {
                 self.check_type1 = 0;
                 return Ok(0x8000_0000);
             }
@@ -133,7 +130,7 @@ impl<B: BarAllocTrait> PioOps for PciHost<B> {
 
     fn write(&mut self, port: u16, access_size: u8, value: u32) -> HyperResult {
         // debug!(
-        //     "this is pci host write port:{:#x} access_size:{} value:{:#x}",
+        //     "PciHost write port:{:#x} access_size:{} value {:#x}",
         //     port, access_size, value
         // );
         if PCI_CFG_ADDR_PORT.contains(&port) {
@@ -141,15 +138,15 @@ impl<B: BarAllocTrait> PioOps for PciHost<B> {
             // deal with pci_check_type1 in linux
             if port == 0xcfb && access_size == 1 {
                 self.check_type1 = 1;
-               // do nothing for read from 0xcf8; 1: outb(0x01, 0xCFB); then will tmp = inl(0xCF8);
-            } 
+                // do nothing for read from 0xcf8; 1: outb(0x01, 0xCFB); then will tmp = inl(0xCF8);
+            }
             //else if port != PCI_CFG_ADDR_PORT.start || access_size != 4 {
-                //return Err(HyperError::InValidPioWrite);
-            //} 
+            //return Err(HyperError::InValidPioWrite);
+            //}
             else {
-                if self.check_type1==1 {
+                if self.check_type1 == 1 {
                     self.check_type1 = 2;
-                }else {
+                } else {
                     // save bdf for next read/write
                     self.config_addr = le_read_u32(&value.to_le_bytes(), 0).unwrap();
                 }
@@ -164,7 +161,7 @@ impl<B: BarAllocTrait> PioOps for PciHost<B> {
                 + (port - PCI_CFG_DATA_PORT.start) as u32;
             let bus_num = ((offset >> PIO_BUS_SHIFT) & CONFIG_BUS_MASK) as u8;
             let devfn = ((offset >> PIO_DEVFN_SHIFT) & CONFIG_DEVFN_MASK) as u8;
-            
+
             if let Some(dev) = self.find_device(bus_num, devfn) {
                 offset &= PIO_OFFSET_MASK;
                 let value_bytes = value.to_le_bytes();

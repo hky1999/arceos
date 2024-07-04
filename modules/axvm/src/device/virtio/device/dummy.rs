@@ -7,7 +7,7 @@ use hypercraft::VirtioError;
 use alloc::format;
 use alloc::sync::Arc;
 use pci::AsAny;
-
+use crate::mm::AddressSpace;
 use crate::device::virtio::{
     QueueConfig, VirtioInterrupt, 
 };
@@ -268,7 +268,8 @@ impl VirtioDevice for DummyVirtioDevice {
     /// * `queue_evts` - The notifier events from guest.
     fn activate(
         &mut self,
-        interrupt_cb: Arc<VirtioInterrupt>,
+        _mem_space: Arc<AddressSpace>,
+        _interrupt_cb: Arc<VirtioInterrupt>,
     ) -> Result<()> {
         Ok(())
     }
