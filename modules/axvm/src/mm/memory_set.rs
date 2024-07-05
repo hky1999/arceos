@@ -301,6 +301,13 @@ impl GuestPhysMemorySet {
         self.regions.clear();
     }
 
+    /// Return the HPA address according to the given `GuestPhysAddr`.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - Guest physical address.
+    /// Return Error if the `gpa` is not mapped,
+    /// or return the HPA address `HostPhysAddr`.
     pub fn translate(&self, gpa: GuestPhysAddr) -> HyperResult<HostPhysAddr> {
         self.translate_by_walk(gpa)
     }
@@ -323,6 +330,13 @@ impl GuestPhysMemorySet {
         }
     }
 
+    /// Return the available size and HPA address to the given `GuestPhysAddr`.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - Guest physical address.
+    /// Return Error if the `addr` is not mapped.
+    /// or return the HPA address `HostPhysAddr` and available mem length
     pub fn translate_and_get_limit(
         &self,
         gpa: GuestPhysAddr,

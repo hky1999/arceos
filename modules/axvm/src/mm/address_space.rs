@@ -20,20 +20,73 @@ pub struct AddressSpace {
 }
 
 impl AddressSpace {
+    /// Create a new `AddressSpace` according to the given `GuestPhysMemorySet`.
+    /// It is just a simple wrapper now.
+    /// `AddressSpace` and `GuestPhysMemorySet` should be combined in our refactored version.
+    ///
+    /// # Arguments
+    ///
+    /// * `inner` - `GuestPhysMemorySet`.
     pub fn new(inner: GuestPhysMemorySet) -> Self {
         AddressSpace {
             inner: Arc::new(RwLock::new(inner)),
         }
     }
 
-    pub fn translate(&self, addr: GuestPhysAddr) -> Result<HostPhysAddr> {
+    /// Return the HPA address according to the given `GuestPhysAddr`.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - Guest physical address.
+    /// Return Error if the `gpa` is not mapped,
+    /// or return the HPA address `HostPhysAddr`.
+    pub fn translate_to_hpa(&self, addr: GuestPhysAddr) -> Result<HostPhysAddr> {
         let inner = self.inner.read();
         inner.translate(addr)
     }
 
-    pub fn translate_and_get_limit(&self, addr: GuestPhysAddr) -> Result<(HostPhysAddr, usize)> {
+    /// Return the HVA address according to the given `GuestPhysAddr`.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - Guest physical address.
+    /// Return Error if the `gpa` is not mapped,
+    /// or return the HVA address `HostVirtAddr`.
+    pub fn translate_to_hva(&self, addr: GuestPhysAddr) -> Result<HostVirtAddr> {
+        let inner = self.inner.read();
+        Ok(phys_to_virt(inner.translate(addr)?.into()).as_usize())
+    }
+
+    /// Return the available size and HPA address to the given `GuestPhysAddr`.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - Guest physical address.
+    /// Return Error if the `addr` is not mapped.
+    /// or return the HVA address `HostPhysAddr` and available mem length
+    pub fn translate_to_hpa_and_get_limit(
+        &self,
+        addr: GuestPhysAddr,
+    ) -> Result<(HostPhysAddr, usize)> {
         let inner = self.inner.read();
         inner.translate_and_get_limit(addr)
+    }
+
+    /// Return the available size and HVA address to the given `GuestPhysAddr`.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - Guest physical address.
+    /// Return Error if the `addr` is not mapped.
+    /// or return the HVA address `HostVirtAddr` and available mem length
+    pub fn translate_to_hva_and_get_limit(
+        &self,
+        addr: GuestPhysAddr,
+    ) -> Result<(HostVirtAddr, usize)> {
+        let inner = self.inner.read();
+        inner
+            .translate_and_get_limit(addr)
+            .map(|(hpa, length)| (phys_to_virt(hpa.into()).as_usize(), length))
     }
 
     pub fn checked_offset_address(
@@ -106,7 +159,7 @@ impl AddressSpace {
     }
 
     pub fn read_from_guest(&self, addr: GuestPhysAddr, buf: &mut [u8]) -> Result<()> {
-        let host_addr = self.translate(addr)?;
+        let host_addr = self.translate_to_hpa(addr)?;
 
         self.read_from_host(host_addr, buf)
     }
@@ -119,7 +172,7 @@ impl AddressSpace {
     }
 
     pub fn write_to_guest(&self, addr: GuestPhysAddr, buf: &[u8]) -> Result<()> {
-        let host_addr = self.translate(addr)?;
+        let host_addr = self.translate_to_hpa(addr)?;
 
         self.write_to_host(host_addr, buf)
     }
@@ -146,7 +199,7 @@ impl AddressSpace {
 
         loop {
             let io_vec = self
-                .translate_and_get_limit(addr)
+                .translate_to_hva_and_get_limit(addr)
                 .map(|(hva, region_len)| Iovec {
                     iov_base: hva as u64,
                     iov_len: core::cmp::min(len, region_len as u64),
@@ -169,7 +222,7 @@ impl AddressSpace {
 
         match self.inner.read().lookup_region(addr) {
             Ok(guest_region) => Some(TranslatedRegion {
-                hva_base: self.translate(guest_region.hpa).expect("Failed to perform translating in get_region_cache"),
+                hva_base: phys_to_virt(guest_region.hpa.into()).as_usize(),
                 gpa_start: guest_region.gpa,
                 gpa_end: guest_region.gpa + guest_region.size,
             }),

@@ -156,6 +156,11 @@ impl Request {
         // let in_header = GuestAddress(in_iov_elem.addr.0 + in_iov_elem.len as u64 - 1);
         let in_header = in_iov_elem.addr + in_iov_elem.len as usize - 1;
 
+        debug!(
+            "Virtio-blk Req out_header request_type {:#x} sector {:#x} in_header {:#x}",
+            out_header.request_type, out_header.sector, in_header,
+        );
+
         let mut request = Request {
             desc_index: elem.index,
             out_header,
@@ -186,7 +191,8 @@ impl Request {
                     }
                     // Otherwise discard the last "status" byte.
                     _ => iov_discard_back(&mut elem.in_iovec, 1),
-                }.expect("Empty data for block request");
+                }
+                .expect("Empty data for block request");
                 // .with_context(|| "Empty data for block request")?;
 
                 let (data_len, iovec) = gpa_hva_iovec_map(data_iovec, &handler.mem_space)?;
@@ -207,92 +213,82 @@ impl Request {
         Ok(request)
     }
 
-    // fn execute(
-    //     &self,
-    //     iohandler: &mut BlockIoHandler,
-    //     block_backend: Arc<Mutex<dyn BlockDriverOps<AioCompleteCb>>>,
-    //     aiocompletecb: AioCompleteCb,
-    // ) -> Result<()> {
-    //     let mut req = Some(self);
-    //     let mut iovecs = Vec::new();
-    //     while let Some(req_raw) = req {
-    //         for iov in req_raw.iovec.iter() {
-    //             let iovec = Iovec {
-    //                 iov_base: iov.iov_base,
-    //                 iov_len: iov.iov_len,
-    //             };
-    //             iovecs.push(iovec);
-    //         }
-    //         req = req_raw.next.as_ref().as_ref();
-    //     }
-    //     let offset = (aiocompletecb.req.out_header.sector << SECTOR_SHIFT) as usize;
-    //     let request_type = self.out_header.request_type;
-    //     if MigrationManager::is_active()
-    //         && (request_type == VIRTIO_BLK_T_IN || request_type == VIRTIO_BLK_T_GET_ID)
-    //     {
-    //         // FIXME: mark dirty page needs to be managed by `AddressSpace` crate.
-    //         for iov in iovecs.iter() {
-    //             // Mark vmm dirty page manually if live migration is active.
-    //             MigrationManager::mark_dirty_log(iov.iov_base, iov.iov_len);
-    //         }
-    //     }
-    //     // trace::virtio_blk_execute(request_type, iovecs.len(), offset);
+    fn execute(
+        &self,
+        iohandler: &mut BlockIoHandler,
+        // block_backend: Arc<Mutex<dyn BlockDriverOps<AioCompleteCb>>>,
+        // aiocompletecb: AioCompleteCb,
+    ) -> Result<()> {
+        // let mut req = Some(self);
+        // let mut iovecs = Vec::new();
+        // while let Some(req_raw) = req {
+        //     for iov in req_raw.iovec.iter() {
+        //         let iovec = Iovec {
+        //             iov_base: iov.iov_base,
+        //             iov_len: iov.iov_len,
+        //         };
+        //         iovecs.push(iovec);
+        //     }
+        //     req = req_raw.next.as_ref().as_ref();
+        // }
+        // let offset = (aiocompletecb.req.out_header.sector << SECTOR_SHIFT) as usize;
+        // let request_type = self.out_header.request_type;
 
-    //     let serial_num = &iohandler.serial_num;
-    //     let mut locked_backend = block_backend.lock().unwrap();
-    //     match request_type {
-    //         VIRTIO_BLK_T_IN => {
-    //             locked_backend
-    //                 .read_vectored(iovecs, offset, aiocompletecb)
-    //                 .with_context(|| "Failed to process block request for reading")?;
-    //         }
-    //         VIRTIO_BLK_T_OUT => {
-    //             locked_backend
-    //                 .write_vectored(iovecs, offset, aiocompletecb)
-    //                 .with_context(|| "Failed to process block request for writing")?;
-    //         }
-    //         VIRTIO_BLK_T_FLUSH => {
-    //             locked_backend
-    //                 .datasync(aiocompletecb)
-    //                 .with_context(|| "Failed to process block request for flushing")?;
-    //         }
-    //         VIRTIO_BLK_T_GET_ID => {
-    //             let serial = serial_num.clone().unwrap_or_else(|| String::from(""));
-    //             let serial_vec = get_serial_num_config(&serial);
-    //             let status = iov_from_buf_direct(&self.iovec, &serial_vec).map_or_else(
-    //                 |e| {
-    //                     error!("Failed to process block request for getting id, {:?}", e);
-    //                     VIRTIO_BLK_S_IOERR
-    //                 },
-    //                 |_| VIRTIO_BLK_S_OK,
-    //             );
-    //             aiocompletecb.complete_request(status)?;
-    //         }
-    //         VIRTIO_BLK_T_DISCARD => {
-    //             if !iohandler.discard {
-    //                 error!("Device does not support discard");
-    //                 return aiocompletecb.complete_request(VIRTIO_BLK_S_UNSUPP);
-    //             }
-    //             drop(locked_backend);
-    //             self.handle_discard_write_zeroes_req(iohandler, aiocompletecb, OpCode::Discard)?;
-    //         }
-    //         VIRTIO_BLK_T_WRITE_ZEROES => {
-    //             if iohandler.write_zeroes == WriteZeroesState::Off {
-    //                 error!("Device does not support write-zeroes");
-    //                 return aiocompletecb.complete_request(VIRTIO_BLK_S_UNSUPP);
-    //             }
-    //             drop(locked_backend);
-    //             self.handle_discard_write_zeroes_req(
-    //                 iohandler,
-    //                 aiocompletecb,
-    //                 OpCode::WriteZeroes,
-    //             )?;
-    //         }
-    //         // The illegal request type has been handled in method new().
-    //         _ => {}
-    //     };
-    //     Ok(())
-    // }
+        // let serial_num = &iohandler.serial_num;
+        // let mut locked_backend = block_backend.lock().unwrap();
+        // match request_type {
+        //     VIRTIO_BLK_T_IN => {
+        //         locked_backend
+        //             .read_vectored(iovecs, offset, aiocompletecb)
+        //             .with_context(|| "Failed to process block request for reading")?;
+        //     }
+        //     VIRTIO_BLK_T_OUT => {
+        //         locked_backend
+        //             .write_vectored(iovecs, offset, aiocompletecb)
+        //             .with_context(|| "Failed to process block request for writing")?;
+        //     }
+        //     VIRTIO_BLK_T_FLUSH => {
+        //         locked_backend
+        //             .datasync(aiocompletecb)
+        //             .with_context(|| "Failed to process block request for flushing")?;
+        //     }
+        //     VIRTIO_BLK_T_GET_ID => {
+        //         let serial = serial_num.clone().unwrap_or_else(|| String::from(""));
+        //         let serial_vec = get_serial_num_config(&serial);
+        //         let status = iov_from_buf_direct(&self.iovec, &serial_vec).map_or_else(
+        //             |e| {
+        //                 error!("Failed to process block request for getting id, {:?}", e);
+        //                 VIRTIO_BLK_S_IOERR
+        //             },
+        //             |_| VIRTIO_BLK_S_OK,
+        //         );
+        //         aiocompletecb.complete_request(status)?;
+        //     }
+        //     VIRTIO_BLK_T_DISCARD => {
+        //         if !iohandler.discard {
+        //             error!("Device does not support discard");
+        //             return aiocompletecb.complete_request(VIRTIO_BLK_S_UNSUPP);
+        //         }
+        //         drop(locked_backend);
+        //         self.handle_discard_write_zeroes_req(iohandler, aiocompletecb, OpCode::Discard)?;
+        //     }
+        //     VIRTIO_BLK_T_WRITE_ZEROES => {
+        //         if iohandler.write_zeroes == WriteZeroesState::Off {
+        //             error!("Device does not support write-zeroes");
+        //             return aiocompletecb.complete_request(VIRTIO_BLK_S_UNSUPP);
+        //         }
+        //         drop(locked_backend);
+        //         self.handle_discard_write_zeroes_req(
+        //             iohandler,
+        //             aiocompletecb,
+        //             OpCode::WriteZeroes,
+        //         )?;
+        //     }
+        //     // The illegal request type has been handled in method new().
+        //     _ => {}
+        // };
+        Ok(())
+    }
 
     // fn handle_discard_write_zeroes_req(
     //     &self,
@@ -431,6 +427,51 @@ struct BlockIoHandler {
 }
 
 impl BlockIoHandler {
+    fn merge_req_queue(&self, mut req_queue: Vec<Request>) -> Vec<Request> {
+        req_queue.sort_by(|a, b| a.out_header.sector.cmp(&b.out_header.sector));
+
+        let mut merge_req_queue = Vec::<Request>::new();
+        let mut last_req: Option<&mut Request> = None;
+        let mut merged_reqs = 0;
+        let mut merged_iovs = 0;
+        let mut merged_bytes = 0;
+
+        for req in req_queue {
+            let req_iovs = req.iovec.len();
+            let req_bytes = req.data_len;
+            let io = req.out_header.request_type == VIRTIO_BLK_T_IN
+                || req.out_header.request_type == VIRTIO_BLK_T_OUT;
+            let can_merge = match last_req {
+                Some(ref req_ref) => {
+                    io && req_ref.out_header.request_type == req.out_header.request_type
+                        // Note: sector plus sector_num has been checked not overflow.
+                        && (req_ref.out_header.sector + req_ref.get_req_sector_num() == req.out_header.sector)
+                        && merged_reqs < MAX_NUM_MERGE_REQS
+                        && merged_iovs + req_iovs <= MAX_NUM_MERGE_IOVS
+                        && merged_bytes + req_bytes <= MAX_NUM_MERGE_BYTES
+                }
+                None => false,
+            };
+
+            if can_merge {
+                let last_req_raw = last_req.unwrap();
+                last_req_raw.next = Box::new(Some(req));
+                last_req = last_req_raw.next.as_mut().as_mut();
+                merged_reqs += 1;
+                merged_iovs += req_iovs;
+                merged_bytes += req_bytes;
+            } else {
+                merge_req_queue.push(req);
+                last_req = merge_req_queue.last_mut();
+                merged_reqs = 1;
+                merged_iovs = req_iovs;
+                merged_bytes = req_bytes;
+            }
+        }
+
+        merge_req_queue
+    }
+
     fn process_queue_internal(&mut self) -> Result<bool> {
         let queue_size = self.queue.lock().vring.actual_size() as usize;
         let mut req_queue = Vec::with_capacity(queue_size);
@@ -444,6 +485,9 @@ impl BlockIoHandler {
             if elem.desc_num == 0 {
                 break;
             }
+
+            debug!("process_queue_internal get {}", elem);
+
             // Init and put valid request into request queue.
             let mut status = VIRTIO_BLK_S_OK;
             let req = Request::new(self, &mut elem, &mut status)?;
@@ -473,23 +517,37 @@ impl BlockIoHandler {
             return Ok(done);
         }
 
-        // let merge_req_queue = self.merge_req_queue(req_queue);
-        // for req in merge_req_queue.into_iter() {
-        //     let req_rc = Arc::new(req);
-        //     let aiocompletecb = AioCompleteCb::new(
-        //         self.queue.clone(),
-        //         self.mem_space.clone(),
-        //         req_rc.clone(),
-        //         self.interrupt_cb.clone(),
-        //         self.driver_features,
-        //     );
-        //     if let Some(block_backend) = self.block_backend.as_ref() {
-        //         req_rc.execute(self, block_backend.clone(), aiocompletecb)?;
-        //     } else {
-        //         warn!("Failed to execute block request, block_backend not specified");
-        //         aiocompletecb.complete_request(VIRTIO_BLK_S_IOERR)?;
-        //     }
-        // }
+        let merge_req_queue = self.merge_req_queue(req_queue);
+        for req in merge_req_queue.into_iter() {
+            let req_rc = Arc::new(req);
+            
+            /*
+                Todo:
+                
+                Forward these blk Read/Write requests to the host VM daemon to complete.
+
+                For simple implementation, it can be regarded as a simple synchronization process.
+
+                ref: 
+
+                req_forwarding: https://github.com/arceos-hypervisor/arceos/commit/73d65771e4ac16046f18984d70811dd7c8e66078
+                daemon: https://github.com/arceos-hypervisor/arceos-scf-driver
+             */
+
+            // let aiocompletecb = AioCompleteCb::new(
+            //     self.queue.clone(),
+            //     self.mem_space.clone(),
+            //     req_rc.clone(),
+            //     self.interrupt_cb.clone(),
+            //     self.driver_features,
+            // );
+            // if let Some(block_backend) = self.block_backend.as_ref() {
+            //     req_rc.execute(self, block_backend.clone(), aiocompletecb)?;
+            // } else {
+            //     warn!("Failed to execute block request, block_backend not specified");
+            //     aiocompletecb.complete_request(VIRTIO_BLK_S_IOERR)?;
+            // }
+        }
         // if let Some(block_backend) = self.block_backend.as_ref() {
         //     block_backend.lock().unwrap().flush_request()?;
         // }
@@ -881,6 +939,7 @@ impl VirtioDevice for Block {
     }
 
     fn notify_handler(&mut self, val: u16) -> Result {
+        debug!("Virtio-block notify queue {}", val);
         self.io_hanlders[val as usize].process_queue()?;
         Ok(())
     }

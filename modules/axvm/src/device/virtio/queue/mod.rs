@@ -1,4 +1,6 @@
 mod split;
+use core::fmt::write;
+
 pub use split::*;
 
 use alloc::boxed::Box;
@@ -35,15 +37,38 @@ pub struct ElemIovec {
 }
 
 /// IO request element.
+#[derive(Debug)]
 pub struct Element {
     /// Index of the descriptor in the table.
     pub index: u16,
     /// Number of descriptors.
     pub desc_num: u16,
     /// Vector to put host readable descriptors.
+    /// Driver to device.
     pub out_iovec: Vec<ElemIovec>,
     /// Vector to put host writable descriptors.
+    /// Device to driver.
     pub in_iovec: Vec<ElemIovec>,
+}
+
+impl core::fmt::Display for Element {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "Element: index {}, desc_num: {}:\n",
+            self.index, self.desc_num
+        );
+        write!(f, "out_iovec: [");
+        for out_iovec in &self.out_iovec {
+            write!(f, "{:x?}, ", out_iovec);
+        }
+        write!(f, "]\n");
+        write!(f, "in_iovec: [");
+        for in_iovec in &self.in_iovec {
+            write!(f, "{:x?}, ", in_iovec);
+        }
+        write!(f, "]\n")
+    }
 }
 
 impl Element {
@@ -192,7 +217,5 @@ impl Queue {
         self.vring.is_valid(sys_mem)
     }
 
-    pub fn queue_notify_handler(&self) {
-
-    }
+    pub fn queue_notify_handler(&self) {}
 }

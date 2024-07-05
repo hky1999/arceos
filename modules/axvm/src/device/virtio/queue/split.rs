@@ -182,7 +182,7 @@ impl QueueConfig {
         broken: &Arc<AtomicBool>,
     ) {
         self.addr_cache.desc_table_host =
-            if let Ok((addr, size)) = mem_space.translate_and_get_limit(self.desc_table) {
+            if let Ok((addr, size)) = mem_space.translate_to_hva_and_get_limit(self.desc_table) {
                 if size < self.get_desc_size() {
                     report_virtio_error(interrupt_cb.clone(), features, broken);
                     0
@@ -199,7 +199,7 @@ impl QueueConfig {
             };
 
         self.addr_cache.avail_ring_host =
-            if let Ok((addr, size)) = mem_space.translate_and_get_limit(self.avail_ring) {
+            if let Ok((addr, size)) = mem_space.translate_to_hva_and_get_limit(self.avail_ring) {
                 if size < self.get_avail_size(features) {
                     report_virtio_error(interrupt_cb.clone(), features, broken);
                     0
@@ -216,7 +216,7 @@ impl QueueConfig {
             };
 
         self.addr_cache.used_ring_host =
-            if let Ok((addr, size)) = mem_space.translate_and_get_limit(self.used_ring) {
+            if let Ok((addr, size)) = mem_space.translate_to_hva_and_get_limit(self.used_ring) {
                 if size < self.get_used_size(features) {
                     report_virtio_error(interrupt_cb.clone(), features, broken);
                     0
@@ -460,7 +460,7 @@ impl SplitVringDesc {
                     .get_host_address_from_cache(desc.addr, cache)
                     .with_context(|| "Failed to get descriptor table entry host address")?;
                  */
-                desc_table_host = sys_mem.translate(desc.addr)?;
+                desc_table_host = sys_mem.translate_to_hva(desc.addr)?;
                 queue_size = desc.get_desc_num();
                 desc = Self::next_desc(sys_mem, desc_table_host, queue_size, 0, cache)?;
                 desc_size = elem
