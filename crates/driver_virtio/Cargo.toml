@@ -20,4 +20,5 @@ driver_block = { path = "../driver_block", optional = true }
 driver_net = { path = "../driver_net", optional = true }
 driver_display = { path = "../driver_display", optional = true}
 # virtio-drivers = "0.7.3"
-virtio-drivers = { git = "https://github.com/hky1999/virtio-drivers.git", rev = "0a79fc3"}
+# virtio-drivers = { git = "https://github.com/hky1999/virtio-drivers.git", rev = "0a79fc3"}
+virtio-drivers = { path = "../../../virtio-drivers" }

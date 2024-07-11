@@ -94,12 +94,13 @@ impl AllDevices {
 
         for bus in 0..=axconfig::PCI_BUS_END as u8 {
             for (bdf, dev_info) in root.enumerate_bus(bus) {
-                debug!("PCI {}: {}", bdf, dev_info);
+                warn!("PCI {}: {}", bdf, dev_info);
                 if dev_info.header_type != HeaderType::Standard {
                     continue;
                 }
                 match config_pci_device(&mut root, bdf, &mut allocator) {
                     Ok(_) => for_each_drivers!(type Driver, {
+                        warn!("Driver::probe_pci {}: {}", bdf, dev_info);
                         if let Some(dev) = Driver::probe_pci(&mut root, bdf, &dev_info) {
                             info!(
                                 "registered a new {:?} device at {}: {:?}",

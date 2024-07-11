@@ -117,6 +117,8 @@ impl<D: VirtIoDevMeta> DriverProbe for VirtIoDriver<D> {
             _ => return None,
         }
 
+        warn!("driver_virtio::probe_pci_device {}: {}", bdf, dev_info);
+
         if let Some((ty, transport)) =
             driver_virtio::probe_pci_device::<VirtIoHalImpl>(root, bdf, dev_info)
         {
