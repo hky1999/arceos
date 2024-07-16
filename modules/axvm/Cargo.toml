@@ -25,6 +25,9 @@ fdt = { version = "0.1.5" }
 arrayvec = { version = "0.7.2", default-features = false }
 anyhow = { version = "1.0", default-features = false }
 hashbrown = "0.14"
+serde = { version = "1.0.204", default-features = false, features = ["derive"] }
+# toml = { path = "../../../../arceos-crates/toml/crates/toml"}
+toml = { git = "https://github.com/arceos-hypervisor/toml.git", branch = "no_std" }
 
 # ax modules
 axhal = { path = "../axhal" }

@@ -225,6 +225,10 @@ impl VMCfgEntry {
         self.physical_pages.insert(index, pages);
     }
 
+	pub fn append_memory_region(&mut self, region: GuestMemoryRegion) {
+		self.memory_regions.push(region)
+	}
+
     pub fn memory_region_editor<F>(&mut self, f: F)
     where
         F: FnOnce(&mut Vec<GuestMemoryRegion>),

@@ -1,10 +1,13 @@
-use alloc::string::String;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use axhal::current_cpu_id;
 use axhal::mem::{phys_to_virt, PhysAddr};
 use hypercraft::{GuestPhysAddr, HostPhysAddr};
 
+use crate::config::args::{AxVMCreateArg, VmCreateCliArg};
 use crate::config::{vm_cfg_add_vm_entry, vm_cfg_entry, VMCfgEntry, VmType};
+use crate::mm::GuestMemoryRegion;
 use crate::Error;
 use crate::{nmi::nmi_send_msg_by_core_id, nmi::NmiMessage, HyperCraftHal, Result, VCpu};
 // use axhal::hv::HyperCraftHalImpl;
@@ -16,36 +19,6 @@ pub const HVC_SHADOW_PROCESS_RDY: usize = 0x52647921;
 pub const HVC_AXVM_CREATE_CFG: usize = 0x101;
 pub const HVC_AXVM_LOAD_IMG: usize = 0x102;
 pub const HVC_AXVM_BOOT: usize = 0x103;
-
-// The struct used for parameter passing between the kernel module and ArceOS hypervisor.
-// This struct should have the same memory layout as the `AxVMCreateArg` structure in ArceOS.
-// See jailhouse-arceos/driver/axvm.h
-#[derive(Debug)]
-#[repr(C, packed)]
-pub struct AxVMCreateArg {
-    /// VM ID, set by ArceOS hypervisor.
-    vm_id: usize,
-    /// Reserved.
-    vm_type: usize,
-    /// VM cpu mask.
-    cpu_mask: usize,
-    /// VM entry point.
-    vm_entry_point: GuestPhysAddr,
-
-    /// BIOS image loaded target guest physical address.
-    bios_load_gpa: GuestPhysAddr,
-    /// Kernel image loaded target guest physical address.
-    kernel_load_gpa: GuestPhysAddr,
-    /// randisk image loaded target guest physical address.
-    ramdisk_load_gpa: GuestPhysAddr,
-
-    /// Physical load address of BIOS, set by ArceOS hypervisor.
-    bios_load_hpa: HostPhysAddr,
-    /// Physical load address of kernel image, set by ArceOS hypervisor.
-    kernel_load_hpa: HostPhysAddr,
-    /// Physical load address of ramdisk image, set by ArceOS hypervisor.
-    ramdisk_load_hpa: HostPhysAddr,
-}
 
 pub fn handle_hvc<H: HyperCraftHal>(
     vcpu: &mut VCpu<H>,
@@ -94,59 +67,49 @@ pub fn handle_hvc<H: HyperCraftHal>(
     // Err(HyperError::NotSupported)
 }
 
+use core::ffi::CStr;
+
 fn ax_hvc_create_vm(cfg: &mut AxVMCreateArg) -> Result<u32> {
-    // These fields should be set by user, but now this is provided by hypervisor.
-    // Todo: refactor these.
-    match VmType::from(cfg.vm_type) {
-        VmType::VmTNimbOS => {
-            cfg.vm_entry_point = crate::config::NIMBOS_VM_ENTRY;
-            cfg.bios_load_gpa = crate::config::NIMBOS_BIOS_LOAD_GPA;
-            cfg.kernel_load_gpa = crate::config::NIMBOS_KERNEL_LOAD_GPA;
-            // No ramdisk for Nimbos.
-            cfg.ramdisk_load_gpa = 0;
-        }
-        VmType::VmTLinux => {
-            cfg.vm_entry_point = crate::config::LINUX_VM_ENTRY;
-            cfg.bios_load_gpa = crate::config::LINUX_BIOS_LOAD_GPA;
-            cfg.kernel_load_gpa = crate::config::LINUX_KERNEL_LOAD_GPA;
-            cfg.ramdisk_load_gpa = crate::config::LINUX_RAMDISK_LOAD_GPA;
-        }
-        _ => {
-            warn!("Unsupported VM Type {}", cfg.vm_type as u64);
-            return Err(Error::InvalidParam);
-        }
-    }
+    debug!("ax_hvc_create_vm try to create VM [{}]", cfg.vm_id as u64);
+
+    let raw_cfg_gpa = cfg.raw_cfg_base;
+
+    let raw_cfg_hpa = crate::config::root_gpm().translate(raw_cfg_gpa)?;
+    let raw_cfg_str =
+        unsafe { CStr::from_ptr(phys_to_virt(PhysAddr::from(raw_cfg_hpa)).as_ptr() as *const _) }
+            .to_string_lossy()
+            .to_string();
+
+    let vm_arg: VmCreateCliArg = toml::from_str(raw_cfg_str.as_str()).map_err(|err| {
+        error!("toml deserialize get err {:?}", err);
+        Error::InvalidParam
+    })?;
+
+    debug!("VM [{}] cfg: {:#x?}", cfg.vm_id as u64, vm_arg);
 
     let mut vm_cfg = VMCfgEntry::new(
-        String::from("Guest VM"),
-        VmType::from(cfg.vm_type),
+        vm_arg.name,
+        VmType::from(vm_arg.vm_type),
         String::from("guest cmdline"),
-        cfg.cpu_mask,
-        cfg.kernel_load_gpa,
-        cfg.vm_entry_point,
-        cfg.bios_load_gpa,
-        cfg.ramdisk_load_gpa,
+        vm_arg.cpu_set,
+        vm_arg.kernel_load_addr,
+        vm_arg.entry_point,
+        vm_arg.bios_load_addr,
+        vm_arg.ramdisk_load_addr.unwrap_or(0x0),
     );
 
-    let mm_setup_fn = match VmType::from(cfg.vm_type) {
-        VmType::VmTNimbOS => crate::config::nimbos_cfg_def::nimbos_memory_regions_setup,
-        VmType::VmTLinux => crate::config::linux_cfg_def::linux_memory_regions_setup,
-        _ => {
-            warn!("Unsupported VM Type {}", cfg.vm_type as u64);
-            return Err(Error::InvalidParam);
-        }
-    };
-
-    vm_cfg.memory_region_editor(mm_setup_fn);
+    for mm_cfg in vm_arg.memory_regions {
+        vm_cfg.append_memory_region(GuestMemoryRegion::from_config(mm_cfg)?)
+    }
 
     vm_cfg.set_up_memory_region()?;
 
-    // These fields should be set by hypervisor and read by Linux kernel module.
+    // // These fields should be set by hypervisor and read by Linux kernel module.
     (cfg.bios_load_hpa, cfg.kernel_load_hpa, cfg.ramdisk_load_hpa) = vm_cfg.get_img_load_info();
 
     let vm_id = vm_cfg_add_vm_entry(vm_cfg)?;
 
-    // This field should be set by hypervisor and read by Linux kernel module.
+    // // This field should be set by hypervisor and read by Linux kernel module.
     cfg.vm_id = vm_id;
 
     Ok(vm_id as u32)

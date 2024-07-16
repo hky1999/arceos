@@ -1,22 +1,18 @@
+use super::GuestPageTable;
+use crate::config::args::VmMemCfg;
+use crate::{Error, Result as HyperResult};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use axhal::hv::HyperCraftHalImpl;
 use core::{
     clone,
     fmt::{Debug, Display, Formatter, Result},
 };
-use memory_addr::PAGE_SIZE_4K;
-
 use hypercraft::{
     GuestPageTableTrait, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, HyperCraftHal,
 };
-
+use memory_addr::PAGE_SIZE_4K;
 use page_table_entry::MappingFlags;
-
-use crate::{Error, Result as HyperResult};
-
-use axhal::hv::HyperCraftHalImpl;
-
-use super::GuestPageTable;
 
 pub const fn is_aligned(addr: usize) -> bool {
     (addr & (HyperCraftHalImpl::PAGE_SIZE - 1)) == 0
@@ -36,6 +32,15 @@ pub struct GuestMemoryRegion {
 }
 
 impl GuestMemoryRegion {
+    pub fn from_config(mem_cfg: VmMemCfg) -> HyperResult<Self> {
+        Ok(Self {
+            gpa: mem_cfg.gpa,
+            hpa: 0x0,
+            size: mem_cfg.size,
+            flags: MappingFlags::from_bits(mem_cfg.flags).ok_or(Error::InvalidParam)?,
+        })
+    }
+
     fn is_overlap_with(&self, other: &Self) -> bool {
         let s0 = self.gpa;
         let e0 = s0 + self.size;

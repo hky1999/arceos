@@ -962,7 +962,7 @@ impl<B: BarAllocTrait + 'static> VirtioPciDevice<B> {
             warn!("The access range of VirtioPciCfgAccessCap exceeds bar size");
             return None;
         }
-        let data = self.base.config.config[pci_cfg_data_offset..].as_ref();
+        let data: &[u8] = self.base.config.config[pci_cfg_data_offset..].as_ref();
         let mmio_req = MmioReq::new(data.to_vec(), len as u8, (bar_base + off as u64), is_write);
         Some(mmio_req)
 
