@@ -89,132 +89,6 @@ impl Display for GuestMemoryRegion {
     }
 }
 
-/*
-#[derive(Clone, Copy)]
-pub struct MapRegion {
-    pub start: GuestPhysAddr,
-    pub size: usize,
-    pub flags: MappingFlags,
-    mapper: Mapper,
-}
-
-impl MapRegion {
-    pub fn new_offset(
-        start_gpa: GuestPhysAddr,
-        start_hpa: HostPhysAddr,
-        size: usize,
-        flags: MappingFlags,
-    ) -> Self {
-        let start_gpa = if is_aligned(start_gpa) {
-            start_gpa
-        } else {
-            let new_start_gpa = memory_addr::align_down_4k(start_gpa);
-            // warn!(
-            //     "start_gpa {:#x} aligned down to {:#x}",
-            //     start_gpa, new_start_gpa
-            // );
-            new_start_gpa
-        };
-        let start_hpa = if is_aligned(start_hpa) {
-            start_hpa
-        } else {
-            let new_start_hpa = memory_addr::align_down_4k(start_hpa);
-            // warn!(
-            //     "start_hpa {:#x} aligned down to {:#x}",
-            //     start_hpa, new_start_hpa
-            // );
-            new_start_hpa
-        };
-        let size = if is_aligned(size) {
-            size
-        } else {
-            let new_size = memory_addr::align_up_4k(size);
-            // warn!("size {:#x} aligned up to {:#x}", size, new_size);
-            new_size
-        };
-        assert!(is_aligned(start_gpa));
-        assert!(is_aligned(start_hpa));
-        assert!(is_aligned(size));
-        let offset = start_gpa - start_hpa;
-        Self {
-            start: start_gpa,
-            size,
-            flags,
-            mapper: Mapper::Offset(offset),
-        }
-    }
-
-    fn is_overlap_with(&self, other: &Self) -> bool {
-        let s0 = self.start;
-        let e0 = s0 + self.size;
-        let s1 = other.start;
-        let e1 = s1 + other.size;
-        !(e0 <= s1 || e1 <= s0)
-    }
-
-    fn target(&self, gpa: GuestPhysAddr) -> HostPhysAddr {
-        match self.mapper {
-            Mapper::Offset(off) => gpa.wrapping_sub(off),
-        }
-    }
-
-    fn map_to(&self, npt: &mut GuestPageTable) -> HyperResult {
-        let mut start = self.start;
-        let end = start + self.size;
-        debug!(
-            "GPM Mapped Region [{:#x}-{:#x}] {:?}",
-            start, end, self.flags
-        );
-        while start < end {
-            let target = self.target(start);
-            npt.map(start, target, self.flags)?;
-            start += HyperCraftHalImpl::PAGE_SIZE;
-        }
-        Ok(())
-    }
-
-    fn unmap_to(&self, npt: &mut GuestPageTable) -> HyperResult {
-        let mut start = self.start;
-        let end = start + self.size;
-        while start < end {
-            npt.unmap(start)?;
-            start += HyperCraftHalImpl::PAGE_SIZE;
-        }
-        Ok(())
-    }
-}
-
-impl Debug for MapRegion {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        f.debug_struct("MapRegion")
-            .field("range", &(self.start..self.start + self.size))
-            .field("size", &self.size)
-            .field("flags", &self.flags)
-            .field("mapper", &self.mapper)
-            .finish()
-    }
-}
-
-impl Display for MapRegion {
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(
-            f,
-            "[{:#x?}], size {:#x}, flags {:?}",
-            &(self.start..self.start + self.size),
-            &self.size,
-            &self.flags
-        )?;
-        Ok(())
-    }
-}
-
-impl From<GuestMemoryRegion> for MapRegion {
-    fn from(r: GuestMemoryRegion) -> Self {
-        Self::new_offset(r.gpa, r.hpa, r.size, r.flags)
-    }
-}
- */
-
 #[derive(Clone)]
 pub struct GuestPhysMemorySet {
     regions: BTreeMap<GuestPhysAddr, GuestMemoryRegion>,
@@ -227,10 +101,6 @@ impl GuestPhysMemorySet {
             npt: (GuestPageTable::new()?),
             regions: BTreeMap::new(),
         })
-    }
-
-    pub fn nest_page_table(&self) -> GuestPageTable {
-        self.npt.clone()
     }
 
     pub fn nest_page_table_root(&self) -> HostPhysAddr {
@@ -299,7 +169,7 @@ impl GuestPhysMemorySet {
         Ok(())
     }
 
-    pub fn clear(&mut self) {
+    fn clear(&mut self) {
         for region in self.regions.values() {
             region.unmap_to(&mut self.npt).unwrap();
         }
@@ -317,7 +187,7 @@ impl GuestPhysMemorySet {
         self.translate_by_walk(gpa)
     }
 
-    pub fn translate_by_walk(&self, gpa: GuestPhysAddr) -> HyperResult<HostPhysAddr> {
+    fn translate_by_walk(&self, gpa: GuestPhysAddr) -> HyperResult<HostPhysAddr> {
         self.npt.translate(gpa)
     }
 

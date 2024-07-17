@@ -156,13 +156,17 @@ impl Vcpu {
                         let id = regs.rax as u32;
                         let args = (regs.rdi as usize, regs.rsi as usize, regs.rdx as usize);
 
-                        trace!("{:#x?}", regs);
+                        debug!("{:#x?}", regs);
+
                         match crate::handlers::hypercall_handler(vcpu, id, args) {
                             HyperResult::Ok(result) => vcpu.regs_mut().rax = result as u64,
                             Err(e) => panic!("Hypercall failed: {e:?}, hypercall id: {id:#x}, args: {args:#x?}, vcpu: {vcpu:#x?}"),
                         }
 
-                        vcpu.advance_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
+                        vcpu.advance_rip(VM_EXIT_INSTR_LEN_VMCALL).map_err(|err| {
+                            error!("Failed in advance_rip, vcpu.rip {:#x}", vcpu.rip());
+                            err
+                        })?;
                     }
                     VmxExitReason::EXCEPTION_NMI => match crate::handlers::nmi_handler(vcpu) {
                         HyperResult::Ok(result) => vcpu.regs_mut().rax = result as u64,
@@ -174,9 +178,7 @@ impl Vcpu {
                         let length = exit_info.exit_instruction_length;
                         let vm = self.vm();
                         let instr = vm
-                            .decode_instr(
-                                &vcpu, guest_rip, length,
-                            )
+                            .decode_instr(&vcpu, guest_rip, length)
                             .expect("decode instruction failed");
                         vm.devices()
                             .handle_mmio_instruction(vcpu, &exit_info, Some(instr))

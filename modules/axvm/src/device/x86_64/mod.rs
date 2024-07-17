@@ -21,7 +21,7 @@ use axhal::{current_cpu_id, mem::phys_to_virt};
 use bit_field::BitField;
 use core::any::Any;
 use core::marker::PhantomData;
-use core::ops::Range;
+use core::ops::{Add, Range};
 use core::sync::atomic::{AtomicU16, Ordering};
 use device_emu::{ApicBaseMsrHandler, Bundle, VirtLocalApic};
 use hypercraft::{GuestPageTableTrait, MmioOps, PioOps, VirtMsrOps, VmxInterruptionType};
@@ -127,7 +127,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
     }
 
     /// Init devices for VM according to `VMCfgEntry`.
-    pub fn init(&mut self, config: Arc<VMCfgEntry>) {
+    pub fn init(&mut self, config: Arc<VMCfgEntry>, address_space: Arc<AddressSpace>) -> HyperResult {
         /* Todo: Dynamically resolve devices from configuration files. */
 
         match config.get_vm_type() {
@@ -137,17 +137,13 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
             }
             VmType::VmTLinux | VmType::VmTNimbOS => {
                 self.init_pci_host();
-                let sys_mem = Arc::new(AddressSpace::new(
-                    config.get_guest_phys_memory_set().unwrap(),
-                ));
                 let blk = Block::new(BlkDevConfig::default());
                 self.add_virtio_pci_device(
                     String::from("virtio_blk"),
                     0x18,
                     Arc::new(Mutex::new(blk)),
-                    sys_mem,
-                )
-                .unwrap();
+                    address_space,
+                )?;
 
                 // PIC1: 0x20, 0x20 + 2
                 self.add_port_io_device(self.pic[0].clone());
@@ -194,6 +190,7 @@ impl<H: HyperCraftHal, B: BarAllocTrait + 'static> DeviceList<H, B> {
             }
             _ => {}
         }
+        Ok(())
     }
 
     fn init_pci_host(&mut self) {

@@ -63,7 +63,7 @@ pub fn init_hv_page_table() -> Result<(), axhal::paging::PagingError> {
                 r.size,
                 r.flags.into(),
                 false,
-            );
+            )?;
         } else {
             // The rest of memory regions belong to host Linux,
             // which are read from root cell config.
@@ -87,7 +87,7 @@ pub fn init_hv_page_table() -> Result<(), axhal::paging::PagingError> {
                 r.size,
                 r.flags.into(),
                 false,
-            );
+            )?;
             // }
         }
     }

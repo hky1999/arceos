@@ -11,7 +11,7 @@ use spin::RwLock;
 use axalloc::GlobalPage;
 use axhal::mem::virt_to_phys;
 use hypercraft::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
-use memory_addr::PAGE_SIZE_4K;
+use memory_addr::{align_up_4k, PAGE_SIZE_4K};
 use page_table_entry::MappingFlags;
 
 use crate::mm::{GuestMemoryRegion, GuestPhysMemorySet};
@@ -20,11 +20,6 @@ use crate::{Error, Result};
 // VM_ID = 0 reserved for host Linux.
 const CONFIG_VM_ID_START: usize = 1;
 const CONFIG_VM_NUM_MAX: usize = 8;
-
-#[inline]
-const fn align_up_4k(pos: usize) -> usize {
-    (pos + PAGE_SIZE_4K - 1) & !(PAGE_SIZE_4K - 1)
-}
 
 struct VmConfigTable {
     entries: BTreeMap<usize, Arc<VMCfgEntry>>,
@@ -116,15 +111,9 @@ pub struct VMCfgEntry {
     /// Therefore, when looking for the corresponding `cpu_id`,
     /// we need to perform a conversion using `core_id_to_cpu_id`.
     cpu_set: usize,
-
     img_cfg: VMImgCfg,
 
     memory_regions: Vec<GuestMemoryRegion>,
-    memory_set: Once<GuestPhysMemorySet>,
-    /// Physical pages allocated for this VM's RAM.
-    /// Todo: this should be move to VM structure.
-    physical_pages: BTreeMap<usize, GlobalPage>,
-    // memory_set: Option<Arc<RwLock<GuestPhysMemorySet>>>,
 }
 
 impl VMCfgEntry {
@@ -151,9 +140,6 @@ impl VMCfgEntry {
                 ramdisk_load_gpa,
             ),
             memory_regions: Vec::new(),
-            memory_set: Once::new(),
-            physical_pages: BTreeMap::new(),
-            // memory_set: None,
         }
     }
 
@@ -221,159 +207,25 @@ impl VMCfgEntry {
         self.img_cfg.vm_entry_point
     }
 
-    pub fn add_physical_pages(&mut self, index: usize, pages: GlobalPage) {
-        self.physical_pages.insert(index, pages);
-    }
-
-	pub fn append_memory_region(&mut self, region: GuestMemoryRegion) {
-		self.memory_regions.push(region)
-	}
-
-    pub fn memory_region_editor<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut Vec<GuestMemoryRegion>),
-    {
-        f(&mut self.memory_regions)
-    }
-
-    /// Set up VM GuestMemoryRegion.
-    /// Alloc physical memory region for guest ram memory.
-    pub fn set_up_memory_region(&mut self) -> Result {
-        for (index, region) in self.memory_regions.iter_mut().enumerate() {
-            // We do not need to alloc physical memory region for device regions.
-            if region.flags.contains(MappingFlags::DEVICE) {
-                continue;
-            }
-            let ram_size = align_up_4k(region.size);
-            let physical_pages =
-                GlobalPage::alloc_contiguous(ram_size / PAGE_SIZE_4K, PAGE_SIZE_4K).map_err(
-                    |e| {
-                        warn!(
-                            "failed to allocate {} Bytes memory for guest, err {:?}",
-                            ram_size, e
-                        );
-                        Error::NoMemory
-                    },
-                )?;
-            let ram_base_hpa = physical_pages.start_paddr(virt_to_phys).as_usize();
-            region.hpa = ram_base_hpa;
-
-            debug!(
-                "Alloc {:#x} Bytes of GlobalPage for ram region\n{}",
-                physical_pages.size(),
-                region
-            );
-
-            self.physical_pages.insert(index, physical_pages);
-        }
-
-        Ok(())
-    }
-
-    pub fn get_guest_phys_memory_set(&self) -> Result<GuestPhysMemorySet> {
-        info!("Create VM [{}] nested page table", self.vm_id);
-        match self.memory_set.get() {
-            Some(gpm) => {
-                return Ok(gpm.clone());
-            }
-            None => {
-                let gpm = match self.vm_type {
-                    VmType::VMTHostVM => super::gpm_def::root_gpm().clone(),
-                    _ => {
-                        // create nested page table and add mapping
-                        let mut gpm = GuestPhysMemorySet::new()?;
-                        for r in &self.memory_regions {
-                            gpm.map_region(r.clone().into())?;
-                        }
-                        gpm
-                    }
-                };
-                self.memory_set.call_once(|| gpm.clone());
-
-                return Ok(gpm)
-            }
-        }
-
-        // if self.vm_type == VmType::VMTHostVM {
-        //     return Ok(super::gpm_def::root_gpm().clone());
-        // }
-
-        // // let result = Arc::new(RwLock::new(gpm));
-        // // self.memory_set = Some(result.clone());
-        // // Ok(result)
-        // Ok(gpm)
-    }
-
-    fn gpa_to_hpa_inside_ram_memory_region(&self, addr: GuestPhysAddr) -> Option<HostPhysAddr> {
-        for (index, region) in self.memory_regions.iter().enumerate() {
-            if region.flags.contains(MappingFlags::DEVICE) {
-                continue;
-            }
-            if ((region.gpa..region.gpa + region.size).contains(&addr)) {
-                debug!("Target GuestPhysAddr {:#x} belongs to \n\t{}", addr, region);
-                return self
-                    .physical_pages
-                    .get(&index)
-                    .map(|pages| pages.start_paddr(virt_to_phys).as_usize() + addr - region.gpa);
-            }
-        }
-
-        return None;
-    }
-
-    /// According to the VM configuration,
-    /// find the `HostPhysAddr` to which each Guest VM image needs to be loaded.
+    /// Get image loading info in **guest physical address (GPA)** from VM configuration,
     /// Return Value:
-    ///   bios_load_hpa : HostPhysAddr
-    ///   kernel_load_hpa : HostPhysAddr
-    ///   ramdisk_load_hpa : HostPhysAddr
-    pub fn get_img_load_info(&mut self) -> (HostPhysAddr, HostPhysAddr, HostPhysAddr) {
-        if let Some(bios_load_hpa) =
-            self.gpa_to_hpa_inside_ram_memory_region(self.img_cfg.bios_load_gpa)
-        {
-            self.img_cfg.bios_load_hpa = bios_load_hpa;
-        } else {
-            warn!(
-                "Guest VM bios load gpa {:#x} not in ram memory range",
-                self.img_cfg.bios_load_gpa
-            );
-            self.img_cfg.bios_load_hpa = 0;
-        }
-
-        if let Some(kernel_load_hpa) =
-            self.gpa_to_hpa_inside_ram_memory_region(self.img_cfg.kernel_load_gpa)
-        {
-            self.img_cfg.kernel_load_hpa = kernel_load_hpa;
-        } else {
-            warn!(
-                "Guest VM kernel load gpa {:#x} not in ram memory range",
-                self.img_cfg.kernel_load_gpa,
-            );
-            self.img_cfg.kernel_load_hpa = 0;
-        }
-
-        if let Some(ramdisk_load_hpa) =
-            self.gpa_to_hpa_inside_ram_memory_region(self.img_cfg.ramdisk_load_gpa)
-        {
-            self.img_cfg.ramdisk_load_hpa = ramdisk_load_hpa;
-        } else {
-            warn!(
-                "Guest VM ramdisk load gpa {:#x} not in ram memory range",
-                self.img_cfg.ramdisk_load_gpa,
-            );
-            self.img_cfg.ramdisk_load_hpa = 0;
-        }
-
-        debug!(
-            "bios_load_hpa {:#x} kernel_load_hpa {:#x} ramdisk_load_hpa {:#x}",
-            self.img_cfg.bios_load_hpa, self.img_cfg.kernel_load_hpa, self.img_cfg.ramdisk_load_hpa,
-        );
-
+    ///   bios_load_gpa : HostPhysAddr
+    ///   kernel_load_gpa : HostPhysAddr
+    ///   ramdisk_load_gpa : HostPhysAddr
+    pub fn get_img_load_info_gpa(&self) -> (GuestPhysAddr, GuestPhysAddr, GuestPhysAddr) {
         (
-            self.img_cfg.bios_load_hpa,
-            self.img_cfg.kernel_load_hpa,
-            self.img_cfg.ramdisk_load_hpa,
+            self.img_cfg.bios_load_gpa,
+            self.img_cfg.kernel_load_gpa,
+            self.img_cfg.ramdisk_load_gpa,
         )
+    }
+
+    pub fn append_memory_region(&mut self, region: GuestMemoryRegion) {
+        self.memory_regions.push(region)
+    }
+
+    pub fn get_memory_regions(&self) -> Vec<GuestMemoryRegion> {
+        self.memory_regions.clone()
     }
 }
 

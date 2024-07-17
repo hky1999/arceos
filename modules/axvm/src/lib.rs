@@ -53,8 +53,8 @@ pub use hypercraft::{
 };
 pub use hypercraft::{PerCpuDevices, PerVmDevices, VmxExitReason};
 
-use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use alloc::sync::Arc;
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use crate::config::VMCfgEntry;
 use axhal::current_cpu_id;
@@ -73,10 +73,10 @@ pub fn boot_host_linux() {
 
     if hart_id == 0 {
         config::init_root_gpm().expect("init_root_gpm failed");
-        let mvm_config = VMCfgEntry::new_host();
-        vm_id = mvm_config.vm_id();
-        let mut mvm = VM::new(Arc::new(mvm_config));
-        vm::push_vm(vm_id, mvm);
+        let host_vm_config = VMCfgEntry::new_host();
+        vm_id = host_vm_config.vm_id();
+        let mut host_vm = VM::new(Arc::new(host_vm_config)).expect("Failed to setup host VM");
+        vm::push_vm(vm_id, host_vm);
 
         info!("Host VM new success");
 
@@ -88,7 +88,7 @@ pub fn boot_host_linux() {
     }
 
     // let mut vm_list_lock = ;
-    let mut mvm = vm::get_vm_by_id(vm_id).unwrap();
+    let mut host_vm = vm::get_vm_by_id(vm_id).unwrap();
 
     info!("CPU{} add vcpu to vm...", hart_id);
 
@@ -97,9 +97,8 @@ pub fn boot_host_linux() {
         core::hint::spin_loop();
     }
 
-    let vcpu = mvm.vcpu(hart_id).expect("VCPU not exist");
+    let vcpu = host_vm.vcpu(hart_id).expect("VCPU not exist");
 
     debug!("CPU{} before run vcpu {}", hart_id, vcpu.id());
     info!("{:?}", vcpu.run());
 }
-

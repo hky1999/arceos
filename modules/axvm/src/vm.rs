@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::ops::{Add, Deref};
 
 use bit_set::BitSet;
 use hashbrown::HashMap;
@@ -17,19 +17,17 @@ use hypercraft::{
     GuestPageTableTrait, GuestPageWalkInfo, GuestPhysAddr, GuestVirtAddr, HostPhysAddr,
     HostVirtAddr, HyperCraftHal, LinuxContext, PerCpuDevices, PerVmDevices, VmxExitReason,
 };
-use memory_addr::PAGE_SIZE_4K;
-
-use crate::GuestPageTable;
-use alloc::sync::{Arc, Weak};
-use axhal::{current_cpu_id, hv::HyperCraftHalImpl};
+use memory_addr::{align_up_4k, PAGE_SIZE_4K};
+use page_table_entry::MappingFlags;
 
 use crate::config::{vm_cfg_entry, VMCfgEntry, VmType};
 use crate::device::{self, BarAllocImpl, DeviceList};
-
-// use spin::RwLock;
-
 use crate::mm::{AddressSpace, GuestPhysMemorySet};
-use crate::Result;
+use crate::GuestPageTable;
+use crate::{Error, Result};
+use alloc::sync::{Arc, Weak};
+use axalloc::GlobalPage;
+use axhal::{current_cpu_id, hv::HyperCraftHalImpl, mem::virt_to_phys};
 
 lazy_static! {
     pub static ref VCPU_TO_PCPU: Mutex<HashMap<(u32, u32), u32>> = Mutex::new(HashMap::new());
@@ -117,7 +115,7 @@ struct VmInnerConst {
 }
 
 impl VmInnerConst {
-    fn new(config: Arc<VMCfgEntry>, vm: Weak<VM>) -> Self {
+    fn new(config: Arc<VMCfgEntry>, address_space: Arc<AddressSpace>, vm: Weak<VM>) -> Self {
         let vm_id = config.vm_id();
         let phys_id_list = config.get_physical_id_list();
         debug!("VM[{}] vcpu phys_id_list {:?}", vm_id, phys_id_list);
@@ -134,44 +132,97 @@ impl VmInnerConst {
             devices: DeviceList::new(vm_id),
         };
 
-        this.init_devices();
+        this.init_devices(address_space);
         this
     }
 
-    fn init_devices(&mut self) {
-        self.devices.init(self.config.clone())
+    fn init_devices(&mut self, address_space: Arc<AddressSpace>) {
+        self.devices
+            .init(self.config.clone(), address_space)
+            .unwrap()
     }
 }
 
 struct VmInnerMut {
-    pub mem_set: GuestPhysMemorySet,
+    address_space: Arc<AddressSpace>,
+    physical_pages: BTreeMap<usize, GlobalPage>,
 }
 
 impl VmInnerMut {
-    fn new(mem_set: GuestPhysMemorySet) -> Self {
-        Self { mem_set }
+    fn new(config: Arc<VMCfgEntry>) -> Self {
+        let gpm = match config.get_vm_type() {
+            VmType::VMTHostVM => crate::config::root_gpm().clone(),
+            _ => GuestPhysMemorySet::new().unwrap(),
+        };
+
+        Self {
+            address_space: Arc::new(AddressSpace::new(gpm)),
+            physical_pages: BTreeMap::new(),
+        }
+    }
+
+    fn setup_memory_regions(&mut self, config: Arc<VMCfgEntry>) -> Result {
+        for cfg_region in config.get_memory_regions() {
+            // We do not need to alloc physical memory region for device regions.
+            if cfg_region.flags.contains(MappingFlags::DEVICE) {
+                continue;
+            }
+            let ram_size = align_up_4k(cfg_region.size);
+            let pages = GlobalPage::alloc_contiguous(ram_size / PAGE_SIZE_4K, PAGE_SIZE_4K)
+                .map_err(|e| {
+                    warn!(
+                        "failed to allocate {} Bytes memory for guest, err {:?}",
+                        ram_size, e
+                    );
+                    Error::NoMemory
+                })?;
+            let ram_base_hpa = pages.start_paddr(virt_to_phys).as_usize();
+            // region.hpa = ram_base_hpa;
+
+            debug!(
+                "Alloc {:#x} Bytes of GlobalPage for ram region\n{}",
+                pages.size(),
+                cfg_region
+            );
+
+            self.physical_pages.insert(ram_base_hpa, pages);
+
+            let mut region = cfg_region.clone();
+            region.hpa = ram_base_hpa;
+
+            self.address_space.map_region(region);
+        }
+        Ok(())
     }
 }
 
 impl VM {
     /// Create a new [`VM`].
-    pub fn new(config: Arc<VMCfgEntry>) -> Arc<Self> {
+    pub fn new(config: Arc<VMCfgEntry>) -> Result<Arc<Self>> {
         debug!(
             "Constuct VM[{}] {} cpu_set {:#x}",
             config.vm_id(),
             config.vm_name(),
             config.get_cpu_set()
         );
-        let mem_set = config.get_guest_phys_memory_set().unwrap();
+        // let mem_set = config.get_guest_phys_memory_set().unwrap();
 
-        let this = Arc::new_cyclic(|weak| VM {
-            inner_const: VmInnerConst::new(config, weak.clone()),
-            inner_mut: Mutex::new(VmInnerMut::new(mem_set)),
+        let this = Arc::new_cyclic(|weak| {
+            let mut inner_mut = VmInnerMut::new(config.clone());
+            inner_mut.setup_memory_regions(config.clone());
+
+            let inner_const =
+                VmInnerConst::new(config, inner_mut.address_space.clone(), weak.clone());
+
+            VM {
+                inner_const,
+                inner_mut: Mutex::new(inner_mut),
+            }
         });
 
-        this.init_vcpus();
+        this.setup_vcpus();
 
-        this
+        Ok(this)
     }
 
     #[inline]
@@ -204,14 +255,52 @@ impl VM {
     }
 
     pub fn nest_page_table_root(&self) -> HostPhysAddr {
-        self.inner_mut.lock().mem_set.nest_page_table_root()
+        self.inner_mut.lock().address_space.nest_page_table_root()
     }
 
-    /// Init Vcpu Context for each vcpu.
-    fn init_vcpus(&self) {
+    /// Setup Vcpu Context for each vcpu.
+    fn setup_vcpus(&self) -> Result {
         for vcpu in self.vcpu_list() {
-            vcpu.init(self).expect("Failed to init vcpu");
+            vcpu.init(self)?;
         }
+        Ok(())
+    }
+
+    /// According to the VM configuration,
+    /// find the `HostPhysAddr` to which each Guest VM image needs to be loaded.
+    /// Return Value:
+    ///   bios_load_hpa : HostPhysAddr
+    ///   kernel_load_hpa : HostPhysAddr
+    ///   ramdisk_load_hpa : HostPhysAddr
+    pub fn get_img_load_info(&self) -> Result<(HostPhysAddr, HostPhysAddr, HostPhysAddr)> {
+        let (bioa_load_gpa, kernel_load_gpa, ramdisk_load_gpa) =
+            self.config().get_img_load_info_gpa();
+
+        let bios_load_hpa = self
+            .inner_mut
+            .lock()
+            .address_space
+            .translate_to_hpa(bioa_load_gpa)?;
+        let kernel_load_hpa = self
+            .inner_mut
+            .lock()
+            .address_space
+            .translate_to_hpa(kernel_load_gpa)?;
+        let ramdisk_load_hpa = if ramdisk_load_gpa != 0 {
+            self.inner_mut
+                .lock()
+                .address_space
+                .translate_to_hpa(ramdisk_load_gpa)?
+        } else {
+            0
+        };
+
+        debug!(
+            "bios_load_hpa {:#x} kernel_load_hpa {:#x} ramdisk_load_hpa {:#x}",
+            bios_load_hpa, kernel_load_hpa, ramdisk_load_hpa,
+        );
+
+        Ok((bios_load_hpa, kernel_load_hpa, ramdisk_load_hpa))
     }
 
     /// decode guest instruction
@@ -224,7 +313,7 @@ impl VM {
         let asm = self
             .inner_mut
             .lock()
-            .mem_set
+            .address_space
             .get_gva_content_bytes(guest_rip, length, vcpu)?;
         let asm_slice = asm.as_slice();
         // Only one isntruction
@@ -239,30 +328,40 @@ impl VM {
     }
 }
 
-pub fn boot_vm(vm_id: usize) {
+pub fn setup_vm(vm_id: usize) -> Result<Arc<VM>> {
     let vm_cfg = match vm_cfg_entry(vm_id) {
         Some(entry) => entry,
         None => {
             warn!("VM {} not existed, boot vm failed", vm_id);
-            return;
+            return Err(Error::InvalidParam);
         }
     };
 
     info!(
-        "boot_vm {} {:?} on core {}, guest entry {:#x}",
+        "setup_vm {} {:?} on core {}, guest entry {:#x}",
         vm_id,
         vm_cfg.get_vm_type(),
         axhal::current_cpu_id(),
         vm_cfg.get_vm_entry(),
     );
 
-    let vm = VM::new(vm_cfg);
-    push_vm(vm_id, vm.clone());
+    let vm = VM::new(vm_cfg).map(|vm| {
+        push_vm(vm_id, vm.clone());
+        vm
+    });
 
-    let vcpu_id = 0;
-    let vcpu = vm.vcpu(vcpu_id).expect("VCPU not exist");
+    vm
+}
 
-    debug!("CPU{} before run vcpu {}", current_cpu_id(), vcpu.id());
+pub fn boot_vm(vm_id: usize) {
+    if let Some(vm) = get_vm_by_id(vm_id) {
+        let vcpu_id = 0;
+        let vcpu = vm.vcpu(vcpu_id).expect("VCPU not exist");
 
-    info!("{:?}", vcpu.run());
+        debug!("CPU{} before run vcpu {}", current_cpu_id(), vcpu.id());
+
+        info!("{:?}", vcpu.run());
+    } else {
+        error!("VM [{}] not existed", vm_id);
+    }
 }

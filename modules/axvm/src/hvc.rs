@@ -48,7 +48,17 @@ pub fn handle_hvc<H: HyperCraftHal>(
 
             debug!("HVC_AXVM_CREATE_CFG get\n{:#x?}", arg);
 
+            // Awkward: In the process of initializing vcpu for the new VM, 
+            // the `bind_to_current_processor` method of the target vcpu needs to be called, 
+            // so `unbind_from_current_processor` is performed here 
+            // to save the VMCS information of the current vcpu
+            vcpu.unbind_from_current_processor()?;
+
             let _ = ax_hvc_create_vm(arg)?;
+            
+            vcpu.bind_to_current_processor()?;
+
+            debug!("HVC_AXVM_CREATE_CFG create success");
         }
         HVC_AXVM_LOAD_IMG => {
             warn!("HVC_AXVM_LOAD_IMG is combined with HVC_AXVM_CREATE_CFG currently");
@@ -102,13 +112,18 @@ fn ax_hvc_create_vm(cfg: &mut AxVMCreateArg) -> Result<u32> {
         vm_cfg.append_memory_region(GuestMemoryRegion::from_config(mm_cfg)?)
     }
 
-    vm_cfg.set_up_memory_region()?;
+    // vm_cfg.set_up_memory_region()?;
 
     // // These fields should be set by hypervisor and read by Linux kernel module.
-    (cfg.bios_load_hpa, cfg.kernel_load_hpa, cfg.ramdisk_load_hpa) = vm_cfg.get_img_load_info();
+    // (cfg.bios_load_hpa, cfg.kernel_load_hpa, cfg.ramdisk_load_hpa) = vm_cfg.get_img_load_info();
 
     let vm_id = vm_cfg_add_vm_entry(vm_cfg)?;
 
+    debug!("VM id from [{}] changed to [{}]", cfg.vm_id as u64, vm_id);
+
+    let vm = crate::vm::setup_vm(vm_id)?;
+
+    (cfg.bios_load_hpa, cfg.kernel_load_hpa, cfg.ramdisk_load_hpa) = vm.get_img_load_info()?;
     // // This field should be set by hypervisor and read by Linux kernel module.
     cfg.vm_id = vm_id;
 

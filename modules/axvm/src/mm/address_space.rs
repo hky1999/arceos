@@ -3,14 +3,16 @@ use alloc::vec::Vec;
 use spin::RwLock;
 
 use axhal::mem::phys_to_virt;
+use axhal::hv::HyperCraftHalImpl;
 use pci::util::byte_code::ByteCode;
 
+use hypercraft::{GuestPageWalkInfo, VCpu};
 use hypercraft::{
     GuestPhysAddr, HostPhysAddr, HostVirtAddr, HyperError, HyperResult as Result, VirtioError,
 };
 
 use crate::mm::iovec::Iovec;
-use crate::mm::GuestPhysMemorySet;
+use crate::mm::{GuestMemoryRegion, GuestPhysMemorySet};
 
 /// A wrapper of GuestPhysMemorySet.
 ///
@@ -31,6 +33,27 @@ impl AddressSpace {
         AddressSpace {
             inner: Arc::new(RwLock::new(inner)),
         }
+    }
+
+    pub fn nest_page_table_root(&self) -> HostPhysAddr {
+        let inner = self.inner.read();
+        inner.nest_page_table_root()
+    }
+
+    pub fn map_region(&self, region: GuestMemoryRegion) -> Result {
+        let mut inner = self.inner.write();
+        inner.map_region(region)
+    }
+
+    /// get gva content bytes
+    pub fn get_gva_content_bytes(
+        &self,
+        guest_rip: usize,
+        length: u32,
+        vcpu: &VCpu<HyperCraftHalImpl>,
+    ) -> Result<Vec<u8>> {
+        let inner = self.inner.read();
+        inner.get_gva_content_bytes(guest_rip, length, vcpu)
     }
 
     /// Return the HPA address according to the given `GuestPhysAddr`.
