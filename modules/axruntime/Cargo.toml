@@ -23,6 +23,7 @@ fs = ["axdriver", "axfs"]
 net = ["axdriver", "axnet"]
 display = ["axdriver", "axdisplay"]
 rtc = []
+hv = []
 
 [dependencies]
 axhal = { workspace = true }

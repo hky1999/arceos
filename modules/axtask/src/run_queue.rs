@@ -253,7 +253,11 @@ impl AxRunQueue {
         debug!("task exit: {}, exit_code={}", curr.id_name(), exit_code);
         assert!(curr.is_running());
         assert!(!curr.is_idle());
-        if curr.is_init() {
+        if curr.is_init()
+            &&
+            // Just if init task is core 0.
+            curr.cpu_set().get(0)
+        {
             EXITED_TASKS.with_current(|exited_tasks| exited_tasks.clear());
             axhal::misc::terminate();
         } else {
@@ -484,13 +488,37 @@ pub(crate) fn init() {
 pub(crate) fn init_secondary() {
     let cpu_id = this_cpu_id();
 
-    // Put the subsequent execution into the `idle` task.
-    let idle_task = TaskInner::new_init("idle".into()).into_arc();
-    idle_task.set_state(TaskState::Running);
-    IDLE_TASK.with_current(|i| {
-        i.init_once(idle_task.clone());
-    });
-    unsafe { CurrentTask::init_current(idle_task) }
+    #[cfg(feature = "hv")]
+    {
+        // Create the `idle` task (not current task).
+        const IDLE_TASK_STACK_SIZE: usize = 4096;
+        let idle_task = TaskInner::new(
+            || crate::run_idle(),
+            "idle".into(),
+            IDLE_TASK_STACK_SIZE,
+            #[cfg(feature = "smp")]
+            Some(1 << cpu_id),
+        );
+        IDLE_TASK.with_current(|i| {
+            i.init_once(idle_task.into_arc());
+        });
+
+        // Put the subsequent execution into the `main` task.
+        let main_secondary_task = TaskInner::new_init("main_secondary".into()).into_arc();
+        main_secondary_task.set_state(TaskState::Running);
+        unsafe { CurrentTask::init_current(main_secondary_task) };
+    }
+
+    #[cfg(not(feature = "hv"))]
+    {
+        // Put the subsequent execution into the `idle` task.
+        let idle_task = TaskInner::new_init("idle".into()).into_arc();
+        idle_task.set_state(TaskState::Running);
+        IDLE_TASK.with_current(|i| {
+            i.init_once(idle_task.clone());
+        });
+        unsafe { CurrentTask::init_current(idle_task) }
+    }
 
     let run_queue = AxRunQueue::new(cpu_id);
     unsafe {
