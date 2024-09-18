@@ -62,12 +62,13 @@ impl WaitQueue {
     }
 
     fn push_to_wait_queue(&self) {
+        let mut wq = self.queue.lock();
         let curr = crate::current();
         assert!(curr.is_running());
         assert!(!curr.is_idle());
         // we must not block current task with preemption disabled.
         #[cfg(feature = "preempt")]
-        assert!(curr.can_preempt(1));
+        assert!(curr.can_preempt(2));
 
         // We set task state as `Blocking` to clarify that the task is blocked
         // but **still NOT** finished its scheduling process.
@@ -83,7 +84,7 @@ impl WaitQueue {
 
         debug!("{} push to wait queue", curr.id_name());
 
-        self.queue.lock().push_back(curr.clone());
+        wq.push_back(curr.clone());
     }
 
     /// Blocks the current task and put it into the wait queue, until other task

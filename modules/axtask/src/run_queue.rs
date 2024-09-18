@@ -243,7 +243,7 @@ impl AxRunQueue {
         let _kernel_guard = kernel_guard::NoPreemptIrqSave::new();
 
         let curr = crate::current();
-        debug!("task exit: {}, exit_code={}", curr.id_name(), exit_code);
+        info!("task exit: {}, exit_code={}", curr.id_name(), exit_code);
         assert!(curr.is_running(), "task is not running: {:?}", curr.state());
         assert!(!curr.is_idle());
         if curr.is_init() {
@@ -273,15 +273,12 @@ impl AxRunQueue {
             "task is not blocking, {:?}",
             curr.state()
         );
-        assert!(curr.in_wait_queue());
 
         debug!("task block: {}", curr.id_name());
         self.resched(false);
     }
 
     pub fn unblock_task(&mut self, task: AxTaskRef, resched: bool) {
-        let cpu_id = self.cpu_id;
-
         // When task's state is Blocking, it has not finished its scheduling process.
         if task.is_blocking() {
             while task.is_blocking() {
@@ -292,7 +289,8 @@ impl AxRunQueue {
         }
 
         if task.is_blocked() {
-            debug!("task unblock: {} on run_queue {}", task.id_name(), cpu_id);
+            let cpu_id = self.cpu_id;
+            warn!("task unblock: {} on run_queue {}", task.id_name(), cpu_id);
             task.set_state(TaskState::Ready);
             self.scheduler.add_task(task); // TODO: priority
 
@@ -331,6 +329,7 @@ impl AxRunQueue {
         if prev.is_running() {
             prev.set_state(TaskState::Ready);
             if !prev.is_idle() {
+                info!("put prev task: {} {:?}", prev.id_name(), prev.state());
                 self.scheduler.put_prev_task(prev.clone(), preempt);
             }
         }
@@ -343,6 +342,9 @@ impl AxRunQueue {
             // Safety: IRQs must be disabled at this time.
             IDLE_TASK.current_ref_raw().get_unchecked().clone()
         });
+        if !next.is_idle() {
+            info!("get next task: {} {:?}", next.id_name(), next.state());
+        }
         assert!(
             next.is_ready(),
             "next {} is not ready: {:?}",
@@ -354,7 +356,7 @@ impl AxRunQueue {
 
     fn switch_to(&mut self, prev_task: CurrentTask, next_task: AxTaskRef) {
         if !prev_task.is_idle() || !next_task.is_idle() {
-            debug!(
+            info!(
                 "context switch: {} -> {}",
                 prev_task.id_name(),
                 next_task.id_name()
