@@ -16,3 +16,5 @@ pub mod gic;
     platform_family = "aarch64-rk3588j"
 )))]
 pub mod pl011;
+
+pub mod smmu;

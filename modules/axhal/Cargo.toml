@@ -60,6 +60,7 @@ crate_interface = { version = "0.1.3", optional = true }
 arm_pl011 = "0.1"
 arm_pl031 = { version = "0.2", optional = true }
 dw_apb_uart = "0.1"
+smmuv3 = { path = "../../../arceos-crates/smmuv3"}
 
 [build-dependencies]
 axconfig = { workspace = true }

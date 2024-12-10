@@ -56,6 +56,7 @@ pub fn platform_init() {
     super::aarch64_common::gic::init_primary();
     super::aarch64_common::generic_timer::init_percpu();
     super::aarch64_common::pl011::init();
+    super::aarch64_common::smmu::init();
 }
 
 /// Initializes the platform devices for secondary CPUs.

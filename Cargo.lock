@@ -23,13 +23,17 @@ dependencies = [
 [[package]]
 name = "allocator"
 version = "0.1.0"
-source = "git+https://github.com/arceos-org/allocator.git?tag=v0.1.0#16496d88dd6fc6a0bdfa59aedfb6b349bd88ee88"
 dependencies = [
  "bitmap-allocator",
  "buddy_system_allocator",
  "rlsf",
  "slab_allocator",
 ]
+
+[[package]]
+name = "allocator"
+version = "0.1.0"
+source = "git+https://github.com/arceos-org/allocator.git?tag=v0.1.0#16496d88dd6fc6a0bdfa59aedfb6b349bd88ee88"
 
 [[package]]
 name = "android-tzdata"
@@ -167,7 +171,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 name = "axalloc"
 version = "0.1.0"
 dependencies = [
- "allocator",
+ "allocator 0.1.0",
  "axerrno",
  "cfg-if",
  "kspin",
@@ -198,7 +202,7 @@ dependencies = [
 name = "axdma"
 version = "0.1.0"
 dependencies = [
- "allocator",
+ "allocator 0.1.0 (git+https://github.com/arceos-org/allocator.git?tag=v0.1.0)",
  "axalloc",
  "axconfig",
  "axerrno",
@@ -392,6 +396,7 @@ dependencies = [
  "riscv",
  "riscv_goldfish",
  "sbi-rt",
+ "smmuv3",
  "static_assertions",
  "tock-registers",
  "x2apic",
@@ -1383,6 +1388,17 @@ version = "0.3.1"
 source = "git+https://github.com/arceos-org/slab_allocator.git?tag=v0.3.1#3c13499d664ccd36f66786985b753340aea57f5a"
 dependencies = [
  "buddy_system_allocator",
+]
+
+[[package]]
+name = "smmuv3"
+version = "0.1.0"
+dependencies = [
+ "aarch64-cpu",
+ "bitflags 2.6.0",
+ "log",
+ "memory_addr",
+ "tock-registers",
 ]
 
 [[package]]
